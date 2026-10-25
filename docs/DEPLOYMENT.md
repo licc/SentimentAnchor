@@ -58,9 +58,10 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m pytest tests -q      # 期望 22 passed
 
-# 5) 改适配器配置：exe_path 指向你的客户端，首次务必保持 dry_run
+# 5) 生成适配器配置：仓库只放模板，真实 config.yaml 含 API Key/本机路径，不入库
+copy config.example.yaml config.yaml
 notepad config.yaml
-#   client.exe_path : "D:\\同花顺软件\\同花顺\\xiadan.exe"（按实际路径）
+#   client.exe_path : "<安装目录>\\同花顺\\xiadan.exe"（按实际路径）
 #   trading.mode    : dry_run
 #   server.host     : 127.0.0.1（只本机用）；局域网见第 6 节
 #   server.api_key  : 留空=不鉴权；对外暴露必须填写
@@ -181,7 +182,7 @@ New-NetFirewallRule -DisplayName 'thsapi 8888 (LAN)'           -Direction Inboun
 | `.env` | 含 `APP_TOKEN`、`ETF_BROKER_KEY` 等口令（已在 `.gitignore`） |
 | `data/` | 运行日志、台账、临时脚本（已在 `.gitignore`） |
 | `data/sentiment.db` | 情绪温度归档（SQLite）。**衍生数据**，丢了可用 `POST /api/sentiment/backfill?days=30` 重新算，不必备份 |
-| `thsapi/.../config.yaml` 的本地改动 | 含 `api_key`、本机 `exe_path`、本机监听地址；仓库内保持默认模板即可 |
+| `thsapi/.../config.yaml` | **本机配置**（`api_key`、`exe_path`、监听地址）。已加入 `.gitignore`，仓库只保留 `config.example.yaml` 模板 |
 
 提交前自查：
 

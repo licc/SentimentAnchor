@@ -58,6 +58,9 @@ Add-WindowsCapability -Online -Name "Language.OCR~~~zh-CN~0.0.1.0"
 cd /d D:\jyauto
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+
+:: 配置：仓库只提供模板，真实配置含 API Key/本机路径，不入库
+copy config.example.yaml config.yaml
 ```
 
 依赖说明：

@@ -1,3 +1,12 @@
+# ============================================================
+# 配置模板 —— 复制成 config.yaml 后再按本机修改：
+#     copy config.example.yaml config.yaml     (Windows)
+#     cp   config.example.yaml config.yaml     (bash)
+#
+# config.yaml 已被 .gitignore 忽略，**不要提交**：
+# 里面会有你的 API Key、客户端安装路径、监听地址等本机信息。
+# 本文件只保留字段与说明，不含任何密钥。
+# ============================================================
 # 同花顺交易接口配置
 # 环境变量覆盖：THSAPI_SERVER__PORT=8902 / THSAPI_TRADING__MODE=dry_run
 

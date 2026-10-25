@@ -36,7 +36,9 @@ D:\jyauto\                      ← 程序目录（解压位置，路径别带�
 :: 3) 安装依赖（会创建 .venv 并自检）
 D:\jyauto\deploy\install.bat
 
-:: 4) 改配置：至少改 client.exe_path；首次保持 trading.mode: dry_run
+:: 4) 生成并修改配置：至少改 client.exe_path；首次保持 trading.mode: dry_run
+::    （config.yaml 不在仓库里，用模板复制；它含 API Key 与本机路径，切勿提交）
+copy D:\jyauto\config.example.yaml D:\jyauto\config.yaml
 notepad D:\jyauto\config.yaml
 
 :: 5) 启动
