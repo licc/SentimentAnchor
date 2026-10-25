@@ -1,0 +1,18 @@
+import { chromium } from 'playwright-core'
+const browser = await chromium.launch({ executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless:true, args:['--no-sandbox'] })
+const page = await browser.newPage({viewport:{width:1440,height:1050}})
+const errors=[]
+page.on('pageerror',e=>errors.push(e.message))
+page.on('console',m=>{if(m.type()==='error')errors.push(m.text())})
+await page.goto('http://127.0.0.1:8787',{waitUntil:'domcontentloaded'})
+await page.waitForSelector('.anchor-card')
+await page.getByRole('button',{name:/工具/}).click()
+await page.locator('.tool-menu button').filter({hasText:'AI 设置'}).click()
+await page.waitForTimeout(500)
+const state = await page.locator('.ai-config-state').innerText()
+await page.getByRole('button',{name:/测试连接/}).click()
+await page.waitForTimeout(700)
+const test = await page.locator('.ai-test-result').innerText().catch(()=> '')
+await page.screenshot({path:'/tmp/ai-config.png',fullPage:false})
+console.log(JSON.stringify({state,test,errors},null,2))
+await browser.close()

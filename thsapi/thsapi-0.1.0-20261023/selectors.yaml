@@ -1,0 +1,39 @@
+# 控件定位校准文件（GUI 版本变化时优先改这里，而不是改代码）
+#
+# 定位优先级：
+#   1. automation_id（UIA 自动化 ID，最稳定但会随版本变化）
+#   2. labels：按中文标签找到其右侧/同行的控件（推荐）
+#   3. buttons：按按钮文字匹配
+#
+# 校准方法：python -m thsapi probe --nav 买入 卖出 撤单 当日委托
+#          会在 runtime/ 下生成控件树文本，核对后把结果填到这里。
+
+pages:
+  buy:
+    code_labels: ["证券代码", "代码", "股票代码"]
+    price_labels: ["买入价格", "委托价格", "买入价", "价格"]
+    qty_labels: ["买入数量", "委托数量", "买入量", "数量"]
+    name_labels: ["证券名称", "名称", "股票名称"]
+    last_labels: ["现价", "最新价", "当前价", "现价(元)"]
+    available_labels: ["可买", "可买数量", "可用资金", "最大可买"]
+    submit_buttons: ["买入"]
+  sell:
+    code_labels: ["证券代码", "代码", "股票代码"]
+    price_labels: ["卖出价格", "委托价格", "卖出价", "价格"]
+    qty_labels: ["卖出数量", "委托数量", "卖出量", "数量"]
+    name_labels: ["证券名称", "名称", "股票名称"]
+    last_labels: ["现价", "最新价", "当前价", "现价(元)"]
+    available_labels: ["可卖", "可卖数量", "可用数量", "最大可卖"]
+    submit_buttons: ["卖出"]
+
+nav:
+  buy: ["买入"]
+  sell: ["卖出"]
+  cancel: ["撤单"]
+  positions: ["资金股票"]
+  orders: ["当日委托"]
+  trades: ["当日成交"]
+
+dialogs:
+  confirm_buttons: ["确定", "是", "确认", "买入", "卖出"]
+  close_buttons: ["确定", "关闭", "知道了", "OK"]

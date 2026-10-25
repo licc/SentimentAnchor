@@ -1,0 +1,13 @@
+pywinauto==0.6.9
+comtypes>=1.2.0
+pywin32>=306
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic>=2.5
+PyYAML>=6.0
+httpx>=0.27
+pytest>=8.0
+# 表格识别用 Windows 自带 OCR 引擎（需要 zh-Hans-CN 语言包）
+winsdk==1.0.0b10
+pillow>=10.0
+numpy>=1.26

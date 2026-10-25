@@ -1,0 +1,50 @@
+# 同花顺交易接口配置
+# 环境变量覆盖：THSAPI_SERVER__PORT=8902 / THSAPI_TRADING__MODE=dry_run
+
+server:
+  host: 127.0.0.1         # 默认只监听本机；需要局域网访问时自行修改并配置 API Key
+  port: 8888
+  api_key: ""              # 强烈建议填写；留空时仅限本机回环使用
+  log_level: INFO
+  docs_enabled: true
+
+client:
+  title_re: ".*网上股票交易系统.*"
+  exe_path: "C:\\同花顺软件\\同花顺\\xiadan.exe"   # 按本机实际安装路径修改
+  auto_launch: true        # 未运行时自动启动（启动后仍需人工登录）
+  window_timeout_s: 15
+  restore_window: true     # 每次操作前还原并置前客户端窗口
+  minimize_after_op: false
+
+trading:
+  mode: dry_run            # 首次使用请保持演练模式，确认无误后再改 live
+  broker: ths              # ths | mock
+  fast_confirm: true       # true=自动点"确定"，false=停在确认框等人工
+  price_check: true        # 用参考价/页面现价做偏离校验
+  max_price_deviation_pct: 10
+  verify_after_order: true # 下单后回读当日委托确认
+  page_settle_ms: 350
+  action_timeout_s: 8
+  grid_read: ocr           # 表格读取: ocr=截屏+系统OCR(推荐,不触发验证码) | export=右键保存 | clipboard=Ctrl+C
+  grid_fallback_clipboard: false  # 仅 clipboard 模式导出失败时是否回退(会触发验证码,建议 false)
+  export_dir: runtime/export
+
+  data_max_age_s: 2.0       # 页面数据超过这么多秒就先点刷新（0=不刷新，可能读到旧余额）
+  cache_ttl_s: 3.0         # 查询结果缓存秒数（0=不缓存）；策略高频轮询时可调大
+
+safety:
+  max_order_amount: 100000       # 单笔金额上限（元）
+  max_daily_orders: 200
+  max_daily_amount: 500000
+  min_interval_ms: 300
+  allowed_symbols: []            # 空=不限制；可写 600000 / 600xxx
+  blocked_symbols: []
+  allow_out_of_hours: false
+  reject_st: true
+  max_quantity: 1000000
+
+journal:
+  enabled: true
+  path: data/orders.db
+
+selectors_path: selectors.yaml

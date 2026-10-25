@@ -1,0 +1,26 @@
+node_modules
+.pnpm-store
+dist
+data/
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+
+# thsapi runtime/cache
+thsapi/**/__pycache__/
+thsapi/**/.pytest_cache/
+thsapi/**/data/
+thsapi/**/runtime/
+thsapi/**/logs/
+thsapi/**/.venv/
+thsapi/**/static/shots/
+thsapi/**/dist/
+thsapi/dist/
+thsapi/*.zip
+thsapi/**/.DS_Store
+runtime/
+__pycache__/
+*.pyc
+.coverage
