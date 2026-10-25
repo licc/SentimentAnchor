@@ -290,6 +290,14 @@ T+0 策略级历史回测未完成
 - [贡献指南](CONTRIBUTING.md)
 - [安全策略](SECURITY.md)
 
+## 联系
+
+扫码添加微信（备注「情绪锚」，便于通过）：
+
+<img src="docs/assets/wechat-inis.jpg" alt="微信联系二维码" width="220" />
+
+问题、想法、想交流策略或部署踩坑，都可以直接找我；也欢迎提 [Issue](https://github.com/licc/SentimentAnchor/issues)。
+
 ## 免责声明
 
 本项目仅用于技术研究和复盘，不构成投资建议。任何策略、回测、AI 输出和界面信号都可能错误；行情来自第三方公开接口，可能延迟、缺失或口径不一致。使用者需自行承担交易、资金和合规风险。
