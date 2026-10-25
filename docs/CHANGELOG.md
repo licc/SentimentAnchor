@@ -40,6 +40,15 @@
   会按 Latin-1 解码，把 `黄金ETF` 显示成 `é»éETF` —— 这是客户端解码假象，现在服务端显式声明编码。
 - **测试**：新增 2 个回归用例（OCR 小数丢失修复、名称乱码判定），`pytest` 从 20 → **22 passed**。
 
+### 文档与运维脚本
+
+- 新增 [部署与操作指引](DEPLOYMENT.md)：从零部署、日常启停、局域网与安全三件套、验收清单、
+  故障排查表（把本次实际踩到的 `.js` 被 WScript 劫持、MFC 运行时缺失、端口未绑 `0.0.0.0`、
+  `EventSource` 永久放弃重连、远程设备时钟偏差、OCR 误识、东财域名被阻断等全部收录）。
+- `scripts/services.ps1`、`scripts/api.ps1` 纳入版本管理（原先在 `data/` 被 gitignore）：
+  脚本改为按自身位置定位仓库根，不再硬编码盘符；`api.ps1` 自动从 `config.yaml` 读取 `server.api_key`。
+- README 使用文档入口、快速开始、thsapi `deploy/DEPLOY.md` 交叉引用同步更新。
+
 ### 升级注意
 
 - 已部署的环境需要补装依赖：`python -m pip install -r requirements.txt`（新增的 OCR 依赖约 75MB）。

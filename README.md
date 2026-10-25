@@ -96,6 +96,7 @@ flowchart LR
 
 ## 使用文档
 
+- [部署与操作指引](docs/DEPLOYMENT.md)（推荐先看：从零部署、启停、局域网、故障排查）
 - [完整使用文档](docs/USAGE.md)
 - [架构](docs/ARCHITECTURE.md)
 - [API](docs/API.md)
@@ -118,6 +119,17 @@ pnpm install
 cp .env.example .env
 pnpm dev
 ```
+
+一键启停（前端 + 后端 + 适配器，日志写到 `data\run\`）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\services.ps1 start
+powershell -ExecutionPolicy Bypass -File scripts\services.ps1 status
+powershell -ExecutionPolicy Bypass -File scripts\services.ps1 stop
+```
+
+完整流程（含 thsapi 虚拟环境、客户端登录、验收清单、故障排查）见
+[部署与操作指引](docs/DEPLOYMENT.md)。
 
 开发地址：
 
