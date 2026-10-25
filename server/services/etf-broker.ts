@@ -155,7 +155,13 @@ export async function placeEtfOrder(input: {
   price: number
   quantity: number
   clientOrderId: string
+  /**
+   * 真实行情参考价（现价）。thsapi 拿它做"委托价偏离现价"校验。
+   * 不传时会退化成用 price 自己，等于没有校验 —— 所以手动下单路径必须传。
+   */
+  refPrice?: number
 }): Promise<unknown> {
+  const ref = input.refPrice && input.refPrice > 0 ? input.refPrice : input.price
   return request('/api/v1/orders', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -167,7 +173,7 @@ export async function placeEtfOrder(input: {
       price: brokerPrice(input.price, input.side, input.symbol),
       quantity: input.quantity,
       client_order_id: input.clientOrderId,
-      ref_price: brokerPrice(input.price, input.side, input.symbol),
+      ref_price: brokerPrice(ref, input.side, input.symbol),
       order_type: 'limit',
     }),
   }, getRuntimeConfig().orderTimeoutMs)

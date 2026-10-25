@@ -101,8 +101,11 @@ class RiskGuard:
         cfg = self.cfg
         if cfg.reject_st and ("ST" in ctx.name.upper() or "退" in ctx.name):
             raise RiskRejected(f"{req.symbol} {ctx.name} 属于 ST/退市风险股，已拒绝")
-        # 价格偏离校验：优先用调用方给的参考价，其次用下单页面的现价
-        ref = req.ref_price if req.ref_price and req.ref_price > 0 else ctx.last_price
+        # 价格偏离校验：以**下单页面的现价**为准。
+        # 不能优先用调用方给的 ref_price —— 调用方把 price 和 ref_price 填成同一个值，
+        # 偏离就成了 0%，等于自己给自己背书，这道校验会被完全绕过。
+        # ref_price 只在读不到页面现价时兜底。
+        ref = ctx.last_price if ctx.last_price and ctx.last_price > 0 else (req.ref_price or 0)
         if (
             ref > 0
             and self.trading_cfg
@@ -112,7 +115,7 @@ class RiskGuard:
             dev = abs(req.price - ref) / ref * 100
             if dev > self.trading_cfg.max_price_deviation_pct:
                 raise RiskRejected(
-                    f"委托价 {req.price} 偏离参考价 {ref:g} {dev:.2f}%，"
+                    f"委托价 {req.price} 偏离现价 {ref:g} {dev:.2f}%，"
                     f"超过阈值 {self.trading_cfg.max_price_deviation_pct}%"
                 )
         if req.side is Side.SELL and ctx.available and req.quantity > ctx.available:

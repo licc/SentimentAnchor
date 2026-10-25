@@ -606,58 +606,68 @@ class ThsClient:
             name = self._wait_name("", timeout, edit, symbol, side)
         return name
 
-    def _set_field(self, ctrl, value: str | float | int) -> bool:
-        """写入价格/数量框。
+    def _set_field(self, ctrl, value: str | float | int, label: str = "数值") -> bool:
+        """写入价格/数量框，并用 OCR 回读校验；两次仍不一致就中止。
 
         同花顺这几个编辑框对 Ctrl+A 不支持（会变成"追加"而不是"替换"），
         所以统一用「END + 连续退格」清空，再用 OCR 回读校验。
+
+        回读不一致意味着**框里显示的不是我们要下的价**（最常见：价格超出涨跌停，
+        客户端把输入夹到允许值，或干脆保留原来的现价）。这种情况绝不能继续提交，
+        否则会按界面上的价格成交。
         """
         text = str(value)
-        # 真实点击一下，确保键盘焦点在这个框上（set_focus 对自绘编辑框不可靠）
-        try:
-            self.win.pin_topmost(True)
-            click(ctrl)
-        except Exception:  # noqa: BLE001
-            try:
-                ctrl.set_focus()
-            except Exception:  # noqa: BLE001
-                pass
-        finally:
-            try:
-                self.win.pin_topmost(False)
-            except Exception:  # noqa: BLE001
-                pass
-        try:
-            send_key("{END}")
-            for _ in range(12):
-                send_key("{BACKSPACE}")
-            send_key(text, pause=0.02)
-            time.sleep(0.12)
-        except Exception:  # noqa: BLE001
-            try:
-                set_text(ctrl, text, verify=False)
-            except UiElementNotFound:
-                return False
+        want = float(text)
 
-        # 用 OCR 回读确认（这些框读不到文本，只能看像素）
-        try:
-            from .ocr_table import read_number
-
-            r = ctrl.rectangle()
-            got = read_number((r.left, r.top, r.right, r.bottom))
-            want = float(text)
-            if got and abs(got - want) <= 0.002:
-                return True
-            if got:
-                log_msg = f"价格/数量回读不一致: 期望 {want} 实际 {got}"
+        def type_once() -> bool:
+            # 真实点击一下，确保键盘焦点在这个框上（set_focus 对自绘编辑框不可靠）
+            try:
+                self.win.pin_topmost(True)
+                click(ctrl)
+            except Exception:  # noqa: BLE001
                 try:
-                    from logging import getLogger
-
-                    getLogger("thsapi.gui").warning(log_msg)
+                    ctrl.set_focus()
                 except Exception:  # noqa: BLE001
                     pass
-        except Exception:  # noqa: BLE001
-            pass
+            finally:
+                try:
+                    self.win.pin_topmost(False)
+                except Exception:  # noqa: BLE001
+                    pass
+            try:
+                send_key("{END}")
+                for _ in range(12):
+                    send_key("{BACKSPACE}")
+                send_key(text, pause=0.02)
+                time.sleep(0.12)
+                return True
+            except Exception:  # noqa: BLE001
+                try:
+                    set_text(ctrl, text, verify=False)
+                    return True
+                except UiElementNotFound:
+                    return False
+
+        got = 0.0
+        for _attempt in range(2):
+            if not type_once():
+                return False
+            try:
+                from .ocr_table import read_number
+
+                r = ctrl.rectangle()
+                got = read_number((r.left, r.top, r.right, r.bottom))
+            except Exception:  # noqa: BLE001
+                # 读不到（OCR 异常）时不阻断：保持原来的宽松行为
+                return True
+            if got and abs(got - want) <= 0.002:
+                return True
+
+        if got:
+            raise OrderRejected(
+                f"{label}写入后回读不一致：期望 {want:g}，界面显示 {got:g}；已中止，未提交"
+                f"（常见原因：价格超出涨跌停被客户端夹住）"
+            )
         return True
 
     def fill_order(self, side: str, price: float, quantity: int) -> dict[str, Any]:
@@ -681,9 +691,9 @@ class ThsClient:
         if price_edit is None or qty_edit is None:
             missing = "价格" if price_edit is None else "数量"
             raise UiElementNotFound(f"未找到{missing}输入框（{ '卖出' if side=='sell' else '买入' }页）")
-        if price > 0 and not self._set_field(price_edit, f"{price:.3f}"):
+        if price > 0 and not self._set_field(price_edit, f"{price:.3f}", label="委托价格"):
             raise UiElementNotFound("填写委托价格失败")
-        if quantity > 0 and not self._set_field(qty_edit, str(quantity)):
+        if quantity > 0 and not self._set_field(qty_edit, str(quantity), label="委托数量"):
             raise UiElementNotFound("填写委托数量失败")
         return {"price": price, "quantity": quantity}
 

@@ -335,8 +335,11 @@ app.post('/api/etf/order', async (req, res) => withTradeLock(async () => {
     })
     let order: { ok?: boolean; order_id?: string; status?: string; message?: string } = {}
     let placeError: Error | null = null
+    // 真实行情价作为 ref_price 传给适配器，供它做「委托价偏离现价」校验。
+    // 不传的话适配器只能用委托价自证，偏离校验形同虚设（买入页本身没有"现价"控件）。
+    const marketRef = desk?.quotes.find((q) => q.code === symbol)?.price
     try {
-      order = await brokerChannel.placeOrder({ symbol, side, price, quantity, clientOrderId: audit.id }, { source: 'manual' }) as typeof order
+      order = await brokerChannel.placeOrder({ symbol, side, price, quantity, clientOrderId: audit.id, refPrice: marketRef }, { source: 'manual' }) as typeof order
     } catch (err) {
       placeError = err instanceof Error ? err : new Error('下单请求异常')
       if (/HTTP 400|risk_rejected|order_rejected|client_rejected/i.test(placeError.message)) {
