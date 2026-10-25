@@ -401,9 +401,13 @@ function ChartCard({ chart, sentiment, tradingDate }: { chart: ChartPoint[]; sen
           />
           <path d={geometry.area} fill="url(#areaGrad)" />
           <path d={geometry.line} fill="none" stroke="url(#lineGrad)" strokeWidth="2.2" strokeLinejoin="round" className="chart-line" />
-          {geometry.points.map((pt) => (
-            <circle key={pt.p.ts} cx={pt.x} cy={pt.y} r="1.05" className="chart-dot" />
-          ))}
+          {geometry.points
+            // 243 个点全画成 <circle> 会带来 243 个节点的 diff；曲线本身已是连续路径，
+            // 隔点取样在视觉上无差别，节点数直接减半。
+            .filter((_, i, arr) => i % 2 === 0 || i === arr.length - 1)
+            .map((pt) => (
+              <circle key={pt.p.ts} cx={pt.x} cy={pt.y} r="1.05" className="chart-dot" />
+            ))}
           <circle cx={geometry.points[geometry.points.length - 1].x} cy={geometry.points[geometry.points.length - 1].y} r="3.6" className="chart-last" />
           {labels.map((label, i) => {
             const idx = presets[i]

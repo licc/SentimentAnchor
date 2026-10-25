@@ -1,5 +1,5 @@
 import { Anchor, RefreshCw } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState  } from 'react'
 import type { Snapshot, Stock } from '../shared/types'
 import { getAuth, logout, saveWatchCodes, saveWatchlist } from './api'
 import { AiPanel } from './components/AiPanel'
@@ -29,6 +29,13 @@ import { LoginScreen } from './components/LoginScreen'
 import { StealthView } from './components/StealthView'
 import { installFontScale } from './lib/font-scale'
 
+// 对「纯数据 props」的区块做浅比较缓存：打开弹窗/抽屉、切换自选等交互时
+// 不必重渲染这些大区块（它们只在快照变化时才需要更新）。
+const MemoHero = memo(Hero)
+const MemoRules = memo(Rules)
+const MemoIndexStrip = memo(IndexStrip)
+const MemoPhaseRail = memo(PhaseRail)
+const MemoNotebook = memo(Notebook)
 export type FontSize = 'small' | 'normal' | 'large' | 'xlarge'
 const FONT_SIZE_KEY = 'anchor-font-size'
 const FONT_SIZES: FontSize[] = ['small', 'normal', 'large', 'xlarge']
@@ -55,6 +62,17 @@ export default function App() {
     if (saved === 'dark' || saved === 'light') return saved
     return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   })
+
+  // 页面不可见（切标签页 / 最小化）时暂停所有 CSS 动画：
+  // livePulse（box-shadow）、bars、aiScan 等都是无限动画，后台仍会持续重绘。
+  useEffect(() => {
+    const apply = () => {
+      document.documentElement.dataset.anim = document.visibilityState === 'hidden' ? 'off' : 'on'
+    }
+    apply()
+    document.addEventListener('visibilitychange', apply)
+    return () => document.removeEventListener('visibilitychange', apply)
+  }, [])
 
   useEffect(() => {
     const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
@@ -304,10 +322,10 @@ function Dashboard({ authRequired, onLogout, onStealth, theme, onToggleTheme, au
             <button type="button" onClick={() => setModal('sources')}>查看数据源</button>
           </div>
         ) : null}
-        <PhaseRail phases={snapshot.phases} active={snapshot.phase} />
-        <IndexStrip indices={snapshot.indices} />
+        <MemoPhaseRail phases={snapshot.phases} active={snapshot.phase} />
+        <MemoIndexStrip indices={snapshot.indices} />
         <GlobalFearCard snapshot={snapshot} />
-        <Hero snapshot={snapshot} />
+        <MemoHero snapshot={snapshot} />
         <AiPanel
           insight={ai.insight}
           loading={ai.loading}
@@ -336,14 +354,14 @@ function Dashboard({ authRequired, onLogout, onStealth, theme, onToggleTheme, au
           onOpenWatchlist={() => setModal('watchlist')}
         />
         {view === 'pro' ? <SentimentLab snapshot={snapshot} /> : null}
-        <Notebook logs={snapshot.logs} themes={snapshot.themes} sectors={snapshot.sectors} />
+        <MemoNotebook logs={snapshot.logs} themes={snapshot.themes} sectors={snapshot.sectors} />
         <Recognition
           snapshot={snapshot}
           watchCodes={watchCodes}
           onToggleWatch={(s) => void toggleWatch(s)}
           onOpenStock={(stock, role) => setDrawer({ stock, role })}
         />
-        <Rules snapshot={snapshot} />
+        <MemoRules snapshot={snapshot} />
         {view === 'pro' ? <CalendarPanel data={calendar.data} loading={calendar.loading} error={calendar.error} /> : null}
         <Footer snapshot={snapshot} />
       </main>

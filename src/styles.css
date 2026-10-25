@@ -6945,3 +6945,20 @@ a {
   opacity: 0.85;
   stroke-width: 1.6;
 }
+/* ── 渲染性能 ─────────────────────────────────────────────────────── */
+
+/* 1) 长页面：屏幕外的区块跳过布局/绘制。
+   contain-intrinsic-size 带 auto 会记住上次真实高度，首次滚动过去后不再跳动。 */
+.section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 720px;
+}
+
+/* 2) 页面不可见（切标签页/最小化）时暂停所有动画。
+   仪表盘常被长期挂着，livePulse（box-shadow）、bars、aiScan 等无限动画
+   在后台仍会持续重绘。 */
+:root[data-anim="off"] *,
+:root[data-anim="off"] *::before,
+:root[data-anim="off"] *::after {
+  animation-play-state: paused !important;
+}
