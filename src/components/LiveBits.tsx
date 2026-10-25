@@ -37,8 +37,10 @@ export function NowText() {
 
 /**
  * 刷新倒计时环：以"收到上一帧的本地时刻"为基准倒推，与设备时钟无关。
- * 盘中才需要每秒转动的进度环；休市/收盘时改成静态环——否则顶栏每秒重绘一次，
- * 在带毛玻璃/合成层的场景下容易闪（表现为按钮上出现黑块）。
+ *
+ * 注意：**休市时也要继续转**。这是"数据还在刷新"的唯一可视反馈，
+ * 曾经因为改静态导致用户以为卡死（见 CHANGELOG 2026-10-25 局域网一节）。
+ * 环每秒的重绘开销很小；顶栏的 backdrop-filter 已移除，不会再引发合成伪影。
  */
 export function RefreshRing({
   appliedAt,
@@ -50,33 +52,27 @@ export function RefreshRing({
   marketStatus: string
 }) {
   const period = Math.max(1, Math.round((refreshMs || 10_000) / 1000))
-  if (marketStatus !== '盘中') {
-    return (
-      <div className="countdown" title={`下次刷新 ${period}s`}>
-        <div className="countdown-inner is-closed">
-          <span className="countdown-closed">{marketStatus === '已收盘' ? '收盘' : marketStatus}</span>
-        </div>
-      </div>
-    )
-  }
-  return <LiveRing appliedAt={appliedAt} period={period} />
-}
-
-/** 盘中：每秒更新一次，与时钟共用同一个 ticker（同一帧提交，只重绘一次）。 */
-function LiveRing({ appliedAt, period }: { appliedAt: number; period: number }) {
   const nowMs = useNowMs()
   const elapsed = (nowMs - appliedAt) / 1000
   const countdown = Math.max(0, Math.min(period, Math.ceil(period - elapsed)))
   const progress = Math.max(0, Math.min(1, 1 - countdown / period))
+  const isLive = marketStatus === '盘中'
+
   return (
     <div
       className="countdown"
       style={{ '--progress': `${progress * 360}deg` } as React.CSSProperties}
       title={`下次刷新 ${countdown}s`}
     >
-      <div className="countdown-inner">
-        <span className="mono">{countdown}</span>
-        <small>s</small>
+      <div className={`countdown-inner ${isLive ? '' : 'is-closed'}`}>
+        {isLive ? (
+          <>
+            <span className="mono">{countdown}</span>
+            <small>s</small>
+          </>
+        ) : (
+          <span className="countdown-closed">{marketStatus === '已收盘' ? '收盘' : marketStatus}</span>
+        )}
       </div>
     </div>
   )
