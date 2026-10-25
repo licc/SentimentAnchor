@@ -67,9 +67,14 @@ python -m pip install -r requirements.txt
 | `pywinauto` / `comtypes` / `pywin32` | 操作客户端窗口、控件 |
 | `fastapi` / `uvicorn` / `pydantic` | 本地 HTTP 接口 |
 | `PyYAML` | 读 `config.yaml`、`selectors.yaml` |
-| `winsdk` | 调用 Windows 自带 OCR 读表格 |
+| `rapidocr-onnxruntime` | **主 OCR 引擎**（离线，模型随包分发）。小字号中文准确率远高于系统引擎 |
+| `winsdk` | Windows 自带 OCR，作为 RapidOCR 不可用时的兜底 |
 | `pillow` / `numpy` | 截屏与图像处理 |
 | `pytest` / `httpx` | 跑自带测试 |
+
+> `rapidocr-onnxruntime` 会连带安装 `onnxruntime` 与 `opencv-python`，总体约 75MB。
+> 未安装时程序自动回退到 Windows 自带 OCR（`winsdk`），仍可运行，但持仓表的名称、价格容易被认错。
+> 也可用环境变量 `THSAPI_OCR_ENGINE=rapid|windows|auto` 强制指定引擎（默认 auto）。
 
 > 装 `winsdk` 如果报编译错误，先装 Microsoft Visual C++ Build Tools，或直接装 `pip install winsdk==1.0.0b10`。
 
@@ -80,7 +85,7 @@ cd /d D:\jyauto
 python -m pytest tests -q
 ```
 
-期望结果：`20 passed`。这一步不需要客户端。
+期望结果：`22 passed`。这一步不需要客户端。
 
 ---
 

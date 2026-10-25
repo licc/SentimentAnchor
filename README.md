@@ -100,6 +100,7 @@ flowchart LR
 - [架构](docs/ARCHITECTURE.md)
 - [API](docs/API.md)
 - [验证与边界](docs/VERIFICATION.md)
+- [更新记录](docs/CHANGELOG.md)（最近：2026-10-25 局域网访问与 OCR 识别修复）
 
 ## 快速开始
 
@@ -123,6 +124,15 @@ pnpm dev
 ```text
 前端：http://127.0.0.1:5173
 后端：http://127.0.0.1:8787
+```
+
+需要**局域网访问**时：
+
+```text
+1. 把 .env 的 HOST 改为 0.0.0.0
+2. 把 package.json 里 dev:web 的 --host 改为 0.0.0.0（vite.config.ts 的 server.host 同步改）
+3. 防火墙放行 5173 / 8787 入站（建议限制为本地子网）
+4. 对外暴露前务必设置 .env 的 APP_TOKEN，否则同网段任何人可打开看板并触发交易台操作
 ```
 
 生产构建：
