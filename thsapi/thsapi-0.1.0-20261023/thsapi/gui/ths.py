@@ -363,7 +363,7 @@ class ThsClient:
         由上层（服务层）用 _has_symbol 过滤掉无效行。
         """
         self._current_grid()
-        from .ocr_table import read_table
+        from .ocr_table import read_table, repair_name_cells, repair_symbol_cells
 
         # 刚切页时表格控件可能还没建出来，等一下再找（最多 2 秒）
         rect = None
@@ -394,6 +394,11 @@ class ThsClient:
                     break
                 time.sleep(0.5)
                 table = read_table((rect.left, rect.top, rect.right, rect.bottom), out_dir=out)
+            # 补读要放在重拍之后：否则重拍会整表覆盖，把补读结果丢掉
+            # 持仓表里小号彩色中文常被认成乱码（黄金ETF → E±ETF），代码也常把 5 认成 S
+            table_rect = (rect.left, rect.top, rect.right, rect.bottom)
+            repair_symbol_cells(table, table_rect)
+            repair_name_cells(table, table_rect)
         finally:
             self.win.pin_topmost(False)
         return GridData(headers=normalize_headers(table.headers), rows=table.rows, source="ocr")

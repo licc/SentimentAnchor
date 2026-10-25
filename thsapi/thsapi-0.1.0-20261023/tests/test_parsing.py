@@ -99,3 +99,43 @@ def test_guard_amount_limit():
     with pytest.raises(Exception) as exc:
         g.validate_request(OrderRequest(symbol="600000", side=Side.BUY, price=100.0, quantity=1000))
     assert "上限" in str(exc.value)
+
+
+def test_position_repairs_ocr_decimal_loss():
+    """真实案例：OCR 把 8.199 认成 8,199、把 -70.100 认成 .70,100。
+
+    市价用「市值/持股数」交叉校验修正后，盈亏与盈亏比要跟着重算，
+    否则会算出 819010 这种离谱值。
+    """
+    from thsapi.service import _to_position
+
+    row = {
+        "操作": "",
+        "证券代码": "518880",
+        "证券名称": "黄金ETF",
+        "股票余额": "100",
+        "可用余额": "100",
+        "冻结数量": "0",
+        "成本价": "8.900",
+        "市价": "8,199",
+        "盈亏": ".70,100",
+        "盈亏比": ".7,88",
+        "市值": "819.900",
+    }
+    pos = _to_position(row)
+    assert pos.cost_price == pytest.approx(8.9)
+    assert pos.last_price == pytest.approx(8.199)
+    assert pos.market_value == pytest.approx(819.9)
+    assert pos.pnl == pytest.approx(-70.1, abs=0.05)
+    assert pos.pnl_pct == pytest.approx(-7.88, abs=0.05)
+
+
+def test_looks_garbled_helpers():
+    """名称乱码判定：中文/字母/数字/括号以外出现字符才算乱码。"""
+    from thsapi.gui.ocr_table import looks_garbled
+
+    assert looks_garbled("E±ETF")      # 黄金ETF 被认成 E±ETF
+    assert looks_garbled("æETF")
+    assert not looks_garbled("黄金ETF")
+    assert not looks_garbled("*ST海航")
+    assert not looks_garbled("沪深300ETF(510300)")

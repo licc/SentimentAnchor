@@ -1,4 +1,4 @@
-﻿"""用屏幕截图 + Windows 自带 OCR 读取同花顺表格（不复制、不导出、不触发验证码）。
+"""用屏幕截图 + Windows 自带 OCR 读取同花顺表格（不复制、不导出、不触发验证码）。
 
 原理
 ----
@@ -13,6 +13,10 @@
 from __future__ import annotations
 
 import asyncio
+import io
+import logging
+import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -22,6 +26,20 @@ from PIL import Image, ImageGrab
 from ..errors import ThsError
 
 MAX_OCR_SIDE = 2500.0  # OcrEngine 对图像尺寸有上限，超过会报错
+
+log = logging.getLogger("thsapi.ocr")
+
+# OCR 引擎选择：auto=优先 RapidOCR，失败回退 Windows 自带引擎
+# 环境变量：THSAPI_OCR_ENGINE=rapid|windows|auto
+_OCR_ENGINE_PREF = os.environ.get("THSAPI_OCR_ENGINE", "auto").strip().lower()
+
+
+def _use_rapid() -> bool:
+    if _OCR_ENGINE_PREF == "windows":
+        return False
+    from . import ocr_rapid
+
+    return ocr_rapid.available()
 
 
 @dataclass
@@ -70,7 +88,30 @@ def _engine():
 
 
 async def _recognize_bytes(data: bytes) -> list[Word]:
-    """直接在内存里把 PNG 解码成 SoftwareBitmap 交给 OCR（不落盘）。
+    """识别一张图片（PNG/BMP 字节）并返回词框，坐标与原图像素一致。
+
+    RapidOCR 优先：小号中文（客户端表格只有 12px 高）用 Windows 自带 OCR 会被认成
+    "E±ETF"、"黄±ETF" 这类乱码；RapidOCR 准确得多。不可用或抛错时静默回退。
+    """
+    if _use_rapid():
+        try:
+            from . import ocr_rapid
+
+            img = Image.open(io.BytesIO(data)).convert("RGB")
+            words = [
+                Word(text, left, top, width, height)
+                for text, left, top, width, height in ocr_rapid.recognize(img)
+            ]
+            if words:
+                return words
+            log.debug("RapidOCR 未识别到文字，回退 Windows OCR")
+        except Exception as exc:  # pragma: no cover - 取决于运行环境
+            log.warning("RapidOCR 失败，回退 Windows OCR: %s", exc)
+    return await _recognize_windows(data)
+
+
+async def _recognize_windows(data: bytes) -> list[Word]:
+    """直接用内存流把图片解码成 SoftwareBitmap 交给 Windows OCR（不落盘）。
 
     落盘会触发杀毒软件实时扫描，耗时 1~3 秒且波动很大；内存流稳定在几百毫秒。
     """
@@ -160,8 +201,16 @@ def detect_columns(
 
 
 def warmup() -> None:
-    """预热 OCR 引擎（首次调用要加载模型，约 3 秒），避免拖慢第一个请求。"""
+    """预热 OCR 引擎（首次调用要加载模型，约 2~3 秒），避免拖慢第一个请求。"""
     import io
+
+    if _use_rapid():
+        try:
+            from . import ocr_rapid
+
+            ocr_rapid.warmup()
+        except Exception:  # noqa: BLE001
+            log.warning("RapidOCR 预热失败，将在首次识别时加载", exc_info=True)
 
     try:
         img = Image.new("RGB", (240, 80), (255, 255, 255))
@@ -331,6 +380,141 @@ def read_number(rect: tuple[int, int, int, int], *, scale: float = 3.0) -> float
         return 0.0
 
 
+_GARBLED_RE = re.compile(r"[^\u4e00-\u9fa5A-Za-z0-9()（）\-*.\s]")
+
+
+def looks_garbled(text: str) -> bool:
+    """便宜地判断一段识别结果是否明显被 OCR 认错。
+
+    中文名里出现汉字/字母/数字/括号之外的字符（如 "E±ETF"、"æETF" 里的 ± 和 æ），
+    基本可以断定是字形误识，而不是真实名称。
+    """
+    return bool(_GARBLED_RE.search(text or ""))
+
+
+def read_cell(rect: tuple[int, int, int, int], *, scale: float = 6.0, threshold: int = 200) -> str:
+    """单元格定点补读。
+
+    RapidOCR 可用时走「单行模式」：整格当一行直接识别，约 46ms 且不需要放大/二值化。
+    Windows OCR 则必须二值化 + 高倍放大（小号彩色中文在 2.5 倍下会被认成 E±ETF）。
+    只有可疑单元格才会走到这里。
+    """
+    img = capture(rect)
+    if img.width < 8 or img.height < 8:
+        return ""
+    if _use_rapid():
+        try:
+            from . import ocr_rapid
+
+            text = "".join(t for t, *_ in ocr_rapid.recognize(img, single_line=True, min_score=0.35))
+            if text.strip():
+                return text.strip()
+            log.debug("RapidOCR 单行识别为空，回退 Windows OCR")
+        except Exception:  # pragma: no cover - 取决于运行环境
+            log.warning("RapidOCR 单行识别失败，回退 Windows OCR", exc_info=True)
+    gray = img.convert("L").point(lambda p: 255 if p > threshold else 0)
+    factor = min(scale, MAX_OCR_SIDE / max(img.width, img.height), MAX_OCR_SIDE / max(1, img.height))
+    factor = max(1.0, factor)
+    big = gray.convert("RGB").resize((int(img.width * factor), int(img.height * factor)), Image.LANCZOS)
+    words = [w for w in asyncio.run(_recognize_windows(_png_bytes(big))) if w.text.strip()]
+    words.sort(key=lambda w: w.left)
+    return "".join(w.text for w in words).strip()
+
+
+def _cjk_count(text: str) -> int:
+    return sum(1 for ch in text if "\u4e00" <= ch <= "\u9fa5")
+
+
+def read_cell_best(rect: tuple[int, int, int, int], *, score=None) -> str:
+    """多组参数各补读一次，取评分最高的结果。
+
+    不同渲染状态下最优参数并不相同：早期窗口用 (6, 200) 能读出「黄金ETF」，
+    换布局后同一格在 (3, 180) 才行，故多试几组；只有可疑单元格才会走到这里。
+    """
+    score = score or (lambda t: (_cjk_count(t), len(t)))
+    best = ""
+    for scale, threshold in ((3.0, 180), (6.0, 200), (8.0, 220)):
+        text = read_cell(rect, scale=scale, threshold=threshold)
+        if score(text) > score(best):
+            best = text
+    return best
+
+
+def _repair_column(table: OcrTable, rect: tuple[int, int, int, int], header: str, suspect,
+                   *, require_cjk_if_nonascii: bool = False, digit_only: bool = False) -> int:
+    """对某一列做"可疑即补读"：二值化 + 高倍放大重新识别该单元格。
+
+    suspect(text) 返回 True 表示该格识别结果不可信；只对可疑格付补读代价。
+    """
+    try:
+        idx = table.headers.index(header)
+    except ValueError:
+        return 0
+    cols = table.columns
+    if not (0 <= idx < len(cols) - 1):
+        return 0
+    code_idx = table.headers.index("证券代码") if "证券代码" in table.headers else None
+    if code_idx is not None and not (0 <= code_idx < len(cols) - 1):
+        code_idx = None
+
+    def cell_text(words: list[Word], i: int | None) -> str:
+        if i is None:
+            return ""
+        return "".join(w.text for w in words if cols[i] <= w.cx < cols[i + 1])
+
+    rows_by_code: dict[str, list[str]] = {}
+    for r in table.rows:
+        if code_idx is not None and code_idx < len(r):
+            rows_by_code.setdefault(r[code_idx], r)
+
+    fixed = 0
+    for raw in table.raw_rows[1:]:
+        if code_idx is None:
+            continue
+        target = rows_by_code.get(cell_text(raw, code_idx))
+        if target is None or idx >= len(target) or not suspect(target[idx]):
+            continue
+        words = [w for w in raw if cols[idx] <= w.cx < cols[idx + 1]]
+        if words:
+            top = min(w.top for w in words)
+            bottom = max(w.top + w.height for w in words)
+        else:
+            top = min(w.top for w in raw)
+            bottom = max(w.top + w.height for w in raw)
+        # 行高只有 14~18px，而认错的那两个字可能压根没被识别成词框，
+        # 垂直方向必须留足余量，否则会把汉字上半部分裁掉（"黄金ETF" 只剩 "ETF"）。
+        pad = max(8.0, (bottom - top) * 0.6)
+        top, bottom = top - pad, bottom + pad
+        if bottom - top < 26:
+            mid = (top + bottom) / 2
+            top, bottom = mid - 13, mid + 13
+        score = (lambda x: (sum(ch.isdigit() for ch in x), len(x))) if digit_only else None
+        text = read_cell_best((rect[0] + cols[idx] + 1, rect[1] + top,
+                               rect[0] + cols[idx + 1] - 1, rect[1] + bottom), score=score).strip()
+        if not text or suspect(text):
+            continue
+        if require_cjk_if_nonascii and any(ord(ch) > 127 for ch in target[idx]):
+            # 原来那格是"中文名被认坏"，补读结果必须含汉字，否则会用残缺的 "ETF" 覆盖中文名
+            if not any("\u4e00" <= ch <= "\u9fa5" for ch in text):
+                continue
+        target[idx] = text
+        fixed += 1
+    return fixed
+
+
+def repair_name_cells(table: OcrTable, rect: tuple[int, int, int, int]) -> int:
+    """修正被 OCR 认错的「证券名称」（黄金ETF → E±ETF、æETF）。"""
+    return _repair_column(table, rect, "证券名称", looks_garbled, require_cjk_if_nonascii=True)
+
+
+def repair_symbol_cells(table: OcrTable, rect: tuple[int, int, int, int]) -> int:
+    """修正被 OCR 认错的「证券代码」（518880 → S18880）。
+
+    代码读错会直接导致下错标的，因此校验成 6 位数字，不合法就定点补读。
+    """
+    return _repair_column(table, rect, "证券代码", lambda s: not re.fullmatch(r"\d{6}", (s or "").strip()), digit_only=True)
+
+
 def read_text(rect: tuple[int, int, int, int], *, scale: float = 2.0) -> str:
     """识别一小块区域的文字（用于自定义绘制的弹窗，UIA 读不到时兜底）。"""
     img = capture(rect)
@@ -356,7 +540,13 @@ def read_text(rect: tuple[int, int, int, int], *, scale: float = 2.0) -> str:
 
 
 def read_table(rect: tuple[int, int, int, int], *, scale: float = 2.5, out_dir: Path | None = None) -> OcrTable:
-    """截取 rect 区域并识别成表格。rect 为屏幕坐标 (left, top, right, bottom)。"""
+    """截取 rect 区域并识别成表格。rect 为屏幕坐标 (left, top, right, bottom)。
+
+    RapidOCR 自带文本检测，不需要 2.5 倍放大来"喂饱"识别模型，
+    降到 1.6 倍可省掉近一半推理时间且不影响准确率。
+    """
+    if _use_rapid():
+        scale = min(scale, 1.6)
     img = capture(rect)
     if img.width < 30 or img.height < 20:
         raise ThsError("表格区域太小，无法识别")

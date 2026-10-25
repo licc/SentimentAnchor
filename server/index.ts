@@ -126,7 +126,8 @@ market.listeners.add((snapshot) => {
 })
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ...market.health(), ai: { llmConfigured: Boolean(llmConfig()) }, authRequired: authRequired() })
+  // sseClients：当前挂着 /api/stream 的浏览器数量，排查"远程页面不刷新"时先看这个
+  res.json({ ...market.health(), ai: { llmConfigured: Boolean(llmConfig()) }, authRequired: authRequired(), sseClients: clients.size })
 })
 
 app.get('/api/auth', (req, res) => {
@@ -174,8 +175,10 @@ app.get('/api/stream', (req, res) => {
   res.write(`retry: 4000\n\n`)
   clients.add(res)
   if (market.snapshot) writeSnapshot(res, market.snapshot)
+  console.log(`[stream] 客户端接入 ${req.ip ?? ''} → 当前 ${clients.size} 个`)
   req.on('close', () => {
     clients.delete(res)
+    console.log(`[stream] 客户端断开 ${req.ip ?? ''} → 剩余 ${clients.size} 个`)
   })
 })
 

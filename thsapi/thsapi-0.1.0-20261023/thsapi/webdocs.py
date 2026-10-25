@@ -291,7 +291,7 @@ PAGE = r"""<!doctype html>
   <h1>交易接口</h1>
   <span class="badge" id="ver">v__VERSION__</span>
   <span class="badge" id="mode">mode: __MODE__</span>
-  <span class="badge">http://127.0.0.1:__PORT__</span>
+  <span class="badge" id="hostbadge">http://127.0.0.1:__PORT__</span>
   <div class="spacer"></div>
   <div class="keybox">
     <span id="keywrap">
@@ -314,6 +314,8 @@ const PATHS = __PATHS__;
 const ERRORS = __ERRORS__;
 const AUTH = __AUTH__;
 const BASE = location.origin;
+// 页面可能通过局域网 IP 打开，地址栏徽标显示真实来源，避免误以为是 127.0.0.1
+try { document.getElementById('hostbadge').textContent = BASE; } catch(_) {}
 
 if (!AUTH){
   const kw = document.getElementById('keywrap');

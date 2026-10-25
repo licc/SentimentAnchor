@@ -708,11 +708,23 @@ def _to_account(raw: dict[str, float]) -> Account:
     )
 
 
+def _to_price(value: str) -> float:
+    """价格专用解析：OCR 常把小数点认成逗号（8.199 → 8,199）。
+
+    价格单元格里出现"只有逗号、没有点"的形态时，逗号是小数点而不是千分位；
+    千分位在价格上不会单独出现（同花顺价格一律带三位小数），所以这样判断是安全的。
+    """
+    s = str(value or "").strip()
+    if re.fullmatch(r"-?\d{1,6},\d{1,3}", s):
+        s = s.replace(",", ".")
+    return to_float(s)
+
+
 def _to_position(row: dict[str, str]) -> Position:
     qty = to_int(pick(row, "股票余额", "当前持仓", "持仓数量", "数量", "证券数量"))
     avail = to_int(pick(row, "可用余额", "可用数量", "可卖数量", "可用股数", default=str(qty)))
-    cost = to_float(pick(row, "参考成本价", "成本价", "持仓成本", "摊薄成本价"))
-    last = to_float(pick(row, "市价", "最新价", "现价", "当前价"))
+    cost = _to_price(pick(row, "参考成本价", "成本价", "持仓成本", "摊薄成本价"))
+    last = _to_price(pick(row, "市价", "最新价", "现价", "当前价"))
     mv = to_float(pick(row, "市值", "参考市值", "最新市值"))
     pnl = to_float(pick(row, "盈亏", "浮动盈亏", "参考盈亏"))
     pct = to_float(pick(row, "盈亏比例", "盈亏比", "盈亏率"))
@@ -720,9 +732,12 @@ def _to_position(row: dict[str, str]) -> Position:
     # 市值列常在右侧屏幕外，或 OCR 把负号/小数认错；用持仓×市价自算，更可靠
     if qty > 0 and last > 0 and mv <= 0:
         mv = round(qty * last, 2)
-    # 反过来：市价没读到时，用 市值/持仓 反推
-    if qty > 0 and last <= 0 and mv > 0:
-        last = round(mv / qty, 3)
+    # 反过来：市价没读到时用 市值/持仓 反推；读到了但明显失真（如 8.199 被认成 8199）时，
+    # 同样以「市值/持股数」为准 —— 市值列是整块数字，出错概率远低于逐字符的价格。
+    if qty > 0 and mv > 0:
+        implied = mv / qty
+        if last <= 0 or abs(last - implied) > max(0.02, abs(implied) * 0.2):
+            last = round(implied, 3)
     if qty > 0 and cost > 0 and last > 0:
         calc_pnl = round((last - cost) * qty, 2)
         # 读到的盈亏明显不合理（与自算差太多）时以自算为准

@@ -7,9 +7,10 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any
 
-from fastapi import Body, Depends, FastAPI, Header, Request
+from fastapi import Body, Depends, FastAPI, Header, Request, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.security import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
 
 from . import webdocs
@@ -70,8 +71,16 @@ def create_app(cfg: AppConfig | None = None, service: TradingService | None = No
     def get_service(request: Request) -> TradingService:
         return request.app.state.service
 
+    # 声明为 OpenAPI 安全方案：Swagger 会因此显示 Authorize 按钮，
+    # 否则 /docs 里点 "Try it out" 发出的请求不会带 X-API-Key，必然 401。
+    api_key_scheme = APIKeyHeader(
+        name="X-API-Key",
+        auto_error=False,
+        description="thsapi 访问口令，见 config.yaml 的 server.api_key",
+    )
+
     def auth(
-        x_api_key: str | None = Header(default=None),
+        x_api_key: str | None = Security(api_key_scheme),
         authorization: str | None = Header(default=None),
     ) -> None:
         expected = cfg.server.api_key
@@ -94,6 +103,11 @@ def create_app(cfg: AppConfig | None = None, service: TradingService | None = No
         response = await call_next(request)
         cost = (time.perf_counter() - start) * 1000
         response.headers["X-Elapsed-Ms"] = f"{cost:.0f}"
+        # FastAPI 默认只给 application/json，不带 charset。部分客户端（如 Windows
+        # PowerShell 5.1）会因此按 Latin-1 解码，把"黄金ETF"显示成"é»éETF"。
+        ctype = response.headers.get("content-type")
+        if ctype and ctype.startswith("application/json") and "charset" not in ctype.lower():
+            response.headers["content-type"] = f"{ctype}; charset=utf-8"
         if request.url.path.startswith("/api/"):
             log.info("%s %s -> %s (%.0fms)", request.method, request.url.path, response.status_code, cost)
         return response
