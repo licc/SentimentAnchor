@@ -102,7 +102,34 @@ powershell -ExecutionPolicy Bypass -File scripts\services.ps1 status   # 看端�
 
 ---
 
-## 5. 验收清单（每次改动后跑一遍）
+## 5. 前端性能测量与生产构建
+
+**先说重要的一件事**：开发模式（Vite `5173`）跑的是 React 开发版，带 `jsxDEV`、
+属性校验等调试开销。实测同一个页面，15 秒空闲窗口内：
+
+| 指标 | dev 5173 | 生产 8787 |
+| --- | --- | --- |
+| TaskDuration | 0.726 s | 0.144 s |
+| ScriptDuration | 0.584 s | 0.031 s |
+| JS 堆 | 30.6 MB | 5.7 MB |
+
+所以在 `5173` 上觉得"很吃 CPU"并不代表线上也这样。**长期使用请用生产构建**：
+
+```powershell
+pnpm build            # 产物在 dist/，首屏主包约 369 KB（gzip 110 KB），ETF 页按需加载
+# 构建后由后端 8787 直接托管：http://127.0.0.1:8787/
+```
+
+> `dist` 必须在后端启动**之前**存在才会被托管；`pnpm build` 之后重启一次服务即可。
+
+需要量化时用仓库自带脚本（无需下载浏览器，使用系统已装的 Edge）：
+
+```powershell
+node scripts\perf-frontend.cjs http://127.0.0.1:8787/ --view=pro   # DOM 节点/耗时/样式重算
+node scripts\perf-profile.cjs  http://127.0.0.1:8787/ --view=pro   # 函数级 CPU 热点 Top N
+```
+
+## 6. 验收清单（每次改动后跑一遍）
 
 ```powershell
 # 后端健康 + 数据源状态（期望 ok=True，sources 里 live 数量≥7）
@@ -123,7 +150,7 @@ powershell -ExecutionPolicy Bypass -File scripts\api.ps1 portfolio
 
 ---
 
-## 6. 局域网访问
+## 7. 局域网访问
 
 三个端口都要放开，缺一个就会出现「页面能开但数据不刷新」之类的半通状态。
 
@@ -156,7 +183,7 @@ New-NetFirewallRule -DisplayName 'thsapi 8888 (LAN)'           -Direction Inboun
 
 ---
 
-## 7. 换机器 / 换环境必做校准（GUI 适配器）
+## 8. 换机器 / 换环境必做校准（GUI 适配器）
 
 thsapi 不是接口对接，而是**看屏幕像素**去点控件、读表格。所以它对运行环境极其敏感：
 同一份代码在另一台电脑上"定位不准"，通常不是代码 bug，而是下面这些差异。
@@ -185,7 +212,7 @@ python -m thsapi probe --nav 买入 卖出 撤单 当日委托
 
 GUI 适配器在定位失效时最危险：它可能"看起来成功、实际点错位置"。所以任何一步报错都不要跳过。
 
-## 8. 故障排查
+## 9. 故障排查
 
 | 症状 | 根因 | 处理 |
 | --- | --- | --- |
@@ -204,7 +231,7 @@ GUI 适配器在定位失效时最危险：它可能"看起来成功、实际点
 
 ---
 
-## 9. 不能进 Git 的文件
+## 10. 不能进 Git 的文件
 
 | 文件 | 原因 |
 | --- | --- |
@@ -222,7 +249,7 @@ git diff --cached | Select-String 'api_key|APP_TOKEN|X-API-Key|192\.168\.|C:\\Us
 
 ---
 
-## 10. 升级与回滚
+## 11. 升级与回滚
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\services.ps1 stop

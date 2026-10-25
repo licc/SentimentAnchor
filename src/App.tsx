@@ -1,9 +1,11 @@
 import { Anchor, RefreshCw } from 'lucide-react'
-import { memo, useCallback, useEffect, useMemo, useRef, useState  } from 'react'
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Snapshot, Stock } from '../shared/types'
 import { getAuth, logout, saveWatchCodes, saveWatchlist } from './api'
 import { AiPanel } from './components/AiPanel'
-import { EtfPage } from './components/EtfPage'
+// ETF 交易台是独立大页面（含 EtfDesk 等约 50KB 组件），只有点「交易」才需要，
+// 改为动态引入，避免打进首屏主包。
+const EtfPage = lazy(() => import('./components/EtfPage').then((m) => ({ default: m.EtfPage })))
 import { CalendarPanel } from './components/CalendarPanel'
 import { AnchorGrid } from './components/AnchorGrid'
 import { Hero } from './components/Hero'
@@ -147,14 +149,16 @@ export default function App() {
   }
   if (etfPage) {
     return (
-      <EtfPage
-        theme={theme}
-        onBack={() => { window.history.pushState({}, '', '/'); setEtfPage(false) }}
-        onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
-        onStealth={() => setStealth(true)}
-        fontSize={fontSize}
-        onChangeFontSize={setFontSize}
-      />
+      <Suspense fallback={<LoadingScreen />}>
+        <EtfPage
+          theme={theme}
+          onBack={() => { window.history.pushState({}, '', '/'); setEtfPage(false) }}
+          onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+          onStealth={() => setStealth(true)}
+          fontSize={fontSize}
+          onChangeFontSize={setFontSize}
+        />
+      </Suspense>
     )
   }
   return (
