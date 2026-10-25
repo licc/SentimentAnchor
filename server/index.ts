@@ -81,8 +81,10 @@ setInterval(() => maybeAutoBackup(), 15 * 60_000).unref()
 const clients = new Set<Response>()
 
 app.disable('x-powered-by')
-// 快照 ~78KB、30 日情绪归档 ~200KB，gzip 后可压缩到 1/8 左右；SSE 必须排除，
-// 否则中间件会缓冲事件流，页面就"不刷新"了。
+// gzip 对所有文本响应生效，但 **SSE 必须排除**：
+// 1) SSE 响应带 `Cache-Control: no-transform`，compression 会跳过它（实测无 content-encoding）；
+// 2) 就算去掉 no-transform 强行压缩，一旦中间层攒包，页面就会"不刷新"。
+// 快照 65KB/帧在局域网内的带宽代价可接受，收益不值得冒这个风险。
 app.use(
   compression({
     filter: (req, res) => {
@@ -110,14 +112,23 @@ app.use((req, res, next) => {
   next()
 })
 
-function writeSnapshot(res: Response, snapshot: Snapshot) {
-  res.write(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`)
+/** 一帧 SSE 的完整文本。快照 65KB，N 个客户端共享同一份字符串，避免重复序列化。 */
+function snapshotFrame(snapshot: Snapshot): string {
+  return `event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`
+}
+
+function writeSnapshot(res: Response, frame: string) {
+  res.write(frame)
+  // 启用 gzip 后必须逐帧 flush，否则压缩中间件会攒包，页面就"不刷新"了。
+  ;(res as Response & { flush?: () => void }).flush?.()
 }
 
 market.listeners.add((snapshot) => {
+  // 序列化一次，广播给所有客户端（原来每个客户端各 stringify 一次 65KB）
+  const frame = snapshotFrame(snapshot)
   for (const client of clients) {
     try {
-      writeSnapshot(client, snapshot)
+      writeSnapshot(client, frame)
     } catch {
       clients.delete(client)
     }
@@ -216,8 +227,9 @@ app.get('/api/stream', (req, res) => {
   res.setHeader('X-Accel-Buffering', 'no')
   res.flushHeaders()
   res.write(`retry: 4000\n\n`)
+  ;(res as Response & { flush?: () => void }).flush?.()
   clients.add(res)
-  if (market.snapshot) writeSnapshot(res, market.snapshot)
+  if (market.snapshot) writeSnapshot(res, snapshotFrame(market.snapshot))
   console.log(`[stream] 客户端接入 ${req.ip ?? ''} → 当前 ${clients.size} 个`)
   req.on('close', () => {
     clients.delete(res)

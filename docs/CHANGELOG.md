@@ -1,5 +1,32 @@
 # 更新记录
 
+## 2026-10-25 · 深度分析：SSE 广播与交互重渲染
+
+### 量出来的事实
+
+| 指标 | 实测 |
+| --- | --- |
+| 快照体积 | 65 KB（`chart` 22.3 KB / `limitUps` 15.9 KB / `anchors` 5.7 KB ...） |
+| SSE 广播 | **每个客户端各 `JSON.stringify` 一次** 65 KB |
+| 后端 CPU | 0.31 s / 20 s ≈ **1.6% 单核**（瓶颈不在 Node） |
+| 常驻轮询 | 22 个轮询 hook，大部分挂在弹窗/子页，仅随打开而启动 |
+
+### 改动
+
+1. **SSE 一帧只序列化一次**：`snapshotFrame()` 生成字符串后广播给所有客户端，
+   不再是 N 个客户端 × 65 KB 序列化。
+2. **交互时不再重渲染大区块**：`AnchorGrid` / `Recognition` / `CalendarPanel` 加 `memo`，
+   并把传给它们的 `onToggleWatch` / `onOpenStock` / `onOpenWatchlist` 改成 `useCallback`
+   （内联箭头函数每次渲染都是新引用，会让 `memo` 直接失效）。
+
+### 试过但撤回的（写清楚原因，避免以后重复踩）
+
+- **SSE 启用 gzip**：SSE 响应头带 `Cache-Control: no-transform`，`compression` 会直接跳过
+  （实测响应没有 `content-encoding`）；若为压缩去掉 `no-transform`，一旦中间层攒包，
+  页面就会"不刷新"。省的是局域网带宽，冒的是实时性风险 —— 不划算。
+- **服务端把 `chart` 抽稀**：能省 11 KB/帧，但会降低悬浮 tooltip 的分钟精度，属于功能变化。
+- **列表虚拟滚动**：`limitUps` 只有 30 项、`anchors` 9 项，虚拟化的复杂度换不来收益。
+
 ## 2026-10-25 · 前端渲染继续优化（4 处）
 
 在「秒级重渲染」修掉之后，再做四件不改变功能的事：

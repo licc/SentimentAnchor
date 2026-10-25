@@ -36,6 +36,10 @@ const MemoRules = memo(Rules)
 const MemoIndexStrip = memo(IndexStrip)
 const MemoPhaseRail = memo(PhaseRail)
 const MemoNotebook = memo(Notebook)
+// 纯数据 + 稳定回调的区块：只在快照/自选变化时更新。
+const MemoAnchorGrid = memo(AnchorGrid)
+const MemoRecognition = memo(Recognition)
+const MemoCalendarPanel = memo(CalendarPanel)
 export type FontSize = 'small' | 'normal' | 'large' | 'xlarge'
 const FONT_SIZE_KEY = 'anchor-font-size'
 const FONT_SIZES: FontSize[] = ['small', 'normal', 'large', 'xlarge']
@@ -239,6 +243,12 @@ function Dashboard({ authRequired, onLogout, onStealth, theme, onToggleTheme, au
     [snapshot, watchCodes, showToast],
   )
 
+  // 稳定引用：AnchorGrid / Recognition 用 memo 缓存；内联箭头函数每次渲染都是新函数，
+  // 会让缓存失效（打开抽屉、切弹窗时本来不需要重渲染这两个大区块）。
+  const handleToggleWatch = useCallback((stock: Stock) => void toggleWatch(stock), [toggleWatch])
+  const handleOpenStock = useCallback((stock: Stock, role?: string) => setDrawer({ stock, role }), [])
+  const handleOpenWatchlist = useCallback(() => setModal('watchlist'), [])
+
   const addCode = useCallback(
     async (code: string) => {
       const cfg = await saveWatchlist(code, 'add')
@@ -296,7 +306,7 @@ function Dashboard({ authRequired, onLogout, onStealth, theme, onToggleTheme, au
         refreshing={refreshing}
         watchCount={watchCodes.length}
         onRefresh={refresh}
-        onOpenWatchlist={() => setModal('watchlist')}
+        onOpenWatchlist={handleOpenWatchlist}
         onOpenSources={() => setModal('sources')}
         onOpenExport={() => setModal('export')}
         onOpenImport={() => setModal('import')}
@@ -345,24 +355,24 @@ function Dashboard({ authRequired, onLogout, onStealth, theme, onToggleTheme, au
             })
           }}
         />
-        <AnchorGrid
+        <MemoAnchorGrid
           anchors={snapshot.anchors}
           watchlist={snapshot.watchlist}
           watchCodes={watchCodes}
-          onToggleWatch={(s) => void toggleWatch(s)}
-          onOpenStock={(stock, role) => setDrawer({ stock, role })}
-          onOpenWatchlist={() => setModal('watchlist')}
+          onToggleWatch={handleToggleWatch}
+          onOpenStock={handleOpenStock}
+          onOpenWatchlist={handleOpenWatchlist}
         />
         {view === 'pro' ? <SentimentLab snapshot={snapshot} /> : null}
         <MemoNotebook logs={snapshot.logs} themes={snapshot.themes} sectors={snapshot.sectors} />
-        <Recognition
+        <MemoRecognition
           snapshot={snapshot}
           watchCodes={watchCodes}
-          onToggleWatch={(s) => void toggleWatch(s)}
-          onOpenStock={(stock, role) => setDrawer({ stock, role })}
+          onToggleWatch={handleToggleWatch}
+          onOpenStock={handleOpenStock}
         />
         <MemoRules snapshot={snapshot} />
-        {view === 'pro' ? <CalendarPanel data={calendar.data} loading={calendar.loading} error={calendar.error} /> : null}
+        {view === 'pro' ? <MemoCalendarPanel data={calendar.data} loading={calendar.loading} error={calendar.error} /> : null}
         <Footer snapshot={snapshot} />
       </main>
 
