@@ -315,7 +315,13 @@ a {
   padding: 2px;
   background: conic-gradient(var(--red) var(--progress, 0deg), #ded7c9 0);
   margin-right: 2px;
-  transition: background 0.4s linear;
+  /* 不要写 transition: background —— conic-gradient 之间无法插值，
+     加了只会让浏览器每秒多做一次样式重算，看图像"闪"。 */
+  contain: paint;
+  /* 顶栏有 backdrop-filter: blur(16px)；环每秒重绘若不自成层，会连带模糊层重栅格化，
+     视觉上像顶栏在闪。提升为独立合成层后，每秒只重绘这 38px。 */
+  will-change: transform;
+  transform: translateZ(0);
 }
 
 .countdown-inner {

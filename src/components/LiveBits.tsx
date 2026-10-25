@@ -2,15 +2,22 @@
  * 只让"每秒变化的部分"重渲染。
  *
  * 背景：原来 `useMarketData` 每秒 setState（now / countdown），导致 **App 整棵树**
- * 每秒重渲染一次——包括情绪曲线、涨停池、交易台等大量 SVG/列表。页面开着不动时
+ * 每秒重渲染一次——包括情绪曲线、涨停池、交易台等大量 SVG/列表，页面开着不动时
  * CPU 也常年占用，这就是"主页很吃 CPU"的主因。
  *
- * 现在把时钟与倒计时下沉成独立组件，各自持有 1s 定时器：
- * 状态变化只影响这两个小节点，父级（App / TopBar）不再每秒重渲染。
+ * 现在把时钟与倒计时下沉成独立组件；并且**共用一个 ticker**（src/lib/tick.ts）：
+ * 两个组件各开一个 1 秒定时器时相位不同，顶栏一秒会被重绘两次，
+ * 而顶栏带 backdrop-filter，重绘就要重算模糊，看起来就是"顶部在闪"。
  */
-import { useEffect, useState } from 'react'
+import { useSyncExternalStore } from 'react'
 import { Clock3 } from 'lucide-react'
 import { clockOf } from '../lib/format'
+import { getNow, subscribeTick } from '../lib/tick'
+
+/** 每秒更新一次的"当前时间"，所有小组件共享同一次通知。 */
+function useNowMs(): number {
+  return useSyncExternalStore(subscribeTick, getNow, getNow)
+}
 
 /** 顶部实时时钟：自己走秒，不依赖父组件状态。 */
 export function LiveClock() {
@@ -24,12 +31,8 @@ export function LiveClock() {
 
 /** 纯时间文本（自己走秒），供只需要 HH:mm:ss 的地方复用。 */
 export function NowText() {
-  const [now, setNow] = useState(() => new Date())
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(new Date()), 1_000)
-    return () => window.clearInterval(id)
-  }, [])
-  return <span className="mono">{clockOf(now)}</span>
+  const nowMs = useNowMs()
+  return <span className="mono">{clockOf(new Date(nowMs))}</span>
 }
 
 /**
@@ -45,19 +48,10 @@ export function RefreshRing({
   refreshMs: number
   marketStatus: string
 }) {
+  const nowMs = useNowMs()
   const period = Math.max(1, Math.round((refreshMs || 10_000) / 1000))
-  const [countdown, setCountdown] = useState(period)
-
-  useEffect(() => {
-    const tick = () => {
-      const elapsed = (Date.now() - appliedAt) / 1000
-      setCountdown(Math.max(0, Math.min(period, Math.ceil(period - elapsed))))
-    }
-    tick()
-    const id = window.setInterval(tick, 1_000)
-    return () => window.clearInterval(id)
-  }, [appliedAt, period])
-
+  const elapsed = (nowMs - appliedAt) / 1000
+  const countdown = Math.max(0, Math.min(period, Math.ceil(period - elapsed)))
   const progress = Math.max(0, Math.min(1, 1 - countdown / period))
   const isLive = marketStatus === '盘中'
 
