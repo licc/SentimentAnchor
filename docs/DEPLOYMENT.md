@@ -156,7 +156,36 @@ New-NetFirewallRule -DisplayName 'thsapi 8888 (LAN)'           -Direction Inboun
 
 ---
 
-## 7. 故障排查
+## 7. 换机器 / 换环境必做校准（GUI 适配器）
+
+thsapi 不是接口对接，而是**看屏幕像素**去点控件、读表格。所以它对运行环境极其敏感：
+同一份代码在另一台电脑上"定位不准"，通常不是代码 bug，而是下面这些差异。
+
+| 差异 | 为什么会定位错 | 要求 |
+| --- | --- | --- |
+| **显示缩放 ≠ 100%** | 控件坐标是屏幕物理像素；125%/150% 会让窗口与截屏区域错位，OCR 按像素切列直接错位 | 固定 100% |
+| **多显示器 / 负坐标 / 混合缩放** | 截图 API 取错屏，坐标出现负值 | 只留一块屏，主屏运行 |
+| **窗口未最大化或位置变化** | 表格控件 `CVirtualGridCtrl` 的矩形随窗口变化，右侧列（市值等）可能被裁掉 | 启动后最大化并保持 |
+| **同花顺版本 / 主题 / 字号** | 控件 `automation_id`、类名、标签文案、字形都会变；"大字模式"直接改变像素 | 固定版本与默认主题/字号 |
+| **未装 zh-CN OCR 语言包** | 表格读取全部为空 | 装 `Language.OCR~~~zh-CN` |
+| **进程非 DPI 感知** | Windows 做位图拉伸，1 像素 ≠ 1 物理像素 | 需 Per-Monitor DPI aware，或启动时检测缩放 |
+
+换机器后按顺序做三步校验，**全部通过再切 live**：
+
+```powershell
+# 1) 环境自检：Python 位数/依赖/OCR 语言包/端口/客户端进程
+python deploy\check_env.py
+
+# 2) 导出控件树，与 selectors.yaml 对照（重点看 auto id 与标签文案）
+python -m thsapi probe --nav 买入 卖出 撤单 当日委托
+
+# 3) 只读接口回归（不下单，6 轮，验证表格读取稳定）
+.\.venv\Scripts\python.exe tools\cycle_test.py 6
+```
+
+GUI 适配器在定位失效时最危险：它可能"看起来成功、实际点错位置"。所以任何一步报错都不要跳过。
+
+## 8. 故障排查
 
 | 症状 | 根因 | 处理 |
 | --- | --- | --- |
@@ -175,7 +204,7 @@ New-NetFirewallRule -DisplayName 'thsapi 8888 (LAN)'           -Direction Inboun
 
 ---
 
-## 8. 不能进 Git 的文件
+## 9. 不能进 Git 的文件
 
 | 文件 | 原因 |
 | --- | --- |
@@ -193,7 +222,7 @@ git diff --cached | Select-String 'api_key|APP_TOKEN|X-API-Key|192\.168\.|C:\\Us
 
 ---
 
-## 9. 升级与回滚
+## 10. 升级与回滚
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\services.ps1 stop

@@ -78,7 +78,11 @@ export interface QuoteMap {
 }
 
 export async function fetchStockQuotes(symbols: string[]): Promise<{ map: QuoteMap; at: number; latencyMs: number }> {
-  const unique = [...new Set(symbols.filter(Boolean))]
+  // 归一化：新浪行情接口要求 sh600000 / sz000001 / bj430047 这种带前缀写法。
+  // 之前部分调用点直接传裸代码（如 600000），接口返回空 → /api/manual/quote 永远 null、
+  // 持仓市值与风控报价全部静默失败。这里统一补前缀，一次修好所有调用点。
+  const normalized = symbols.filter(Boolean).map((s) => (/^\d{6}$/.test(s) ? prefixFor(s) : s))
+  const unique = [...new Set(normalized)]
   if (unique.length === 0) return { map: {}, at: Date.now(), latencyMs: 0 }
   const chunks: string[][] = []
   for (let i = 0; i < unique.length; i += 70) chunks.push(unique.slice(i, i + 70))
