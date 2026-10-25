@@ -542,11 +542,16 @@ def read_text(rect: tuple[int, int, int, int], *, scale: float = 2.0) -> str:
 def read_table(rect: tuple[int, int, int, int], *, scale: float = 2.5, out_dir: Path | None = None) -> OcrTable:
     """截取 rect 区域并识别成表格。rect 为屏幕坐标 (left, top, right, bottom)。
 
-    RapidOCR 自带文本检测，不需要 2.5 倍放大来"喂饱"识别模型，
-    降到 1.6 倍可省掉近一半推理时间且不影响准确率。
+    RapidOCR 自带文本检测，不需要 2.5 倍放大；默认 1.6 倍是"精度/速度"的折中。
+    注意：实测 1.6 与 1.2 的**稳态**耗时几乎相同（都是 ~3.6s，差异主要来自模型首次加载），
+    所以没有为了速度降低倍数。需要实验不同倍数时用 THSAPI_OCR_SCALE 覆盖。
     """
     if _use_rapid():
-        scale = min(scale, 1.6)
+        try:
+            tuned = float(os.environ.get("THSAPI_OCR_SCALE", "1.6"))
+        except ValueError:
+            tuned = 1.6
+        scale = min(scale, max(1.0, tuned))
     img = capture(rect)
     if img.width < 30 or img.height < 20:
         raise ThsError("表格区域太小，无法识别")

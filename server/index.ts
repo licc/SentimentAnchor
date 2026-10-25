@@ -5,6 +5,7 @@ import express from 'express'
 import type { Response } from 'express'
 import type { Snapshot } from '../shared/types.js'
 import { MarketService } from './services/market.js'
+import compression from 'compression'
 import { backfillSentiment, isBackfilling } from './services/sentiment-backfill.js'
 import { countDays } from './services/sentiment-store.js'
 import { generateAi, getAiEnvelope, llmConfig } from './services/ai.js'
@@ -80,6 +81,16 @@ setInterval(() => maybeAutoBackup(), 15 * 60_000).unref()
 const clients = new Set<Response>()
 
 app.disable('x-powered-by')
+// 快照 ~78KB、30 日情绪归档 ~200KB，gzip 后可压缩到 1/8 左右；SSE 必须排除，
+// 否则中间件会缓冲事件流，页面就"不刷新"了。
+app.use(
+  compression({
+    filter: (req, res) => {
+      if (req.path === '/api/stream') return false
+      return compression.filter(req, res)
+    },
+  }),
+)
 app.use(express.json({ limit: '64kb' }))
 const allowedOrigins = (process.env.CORS_ORIGINS ?? '')
   .split(',')
@@ -173,7 +184,14 @@ app.get('/api/snapshot', (_req, res) => {
 app.get('/api/sentiment/history', (req, res) => {
   const raw = Number(req.query.days)
   const days = Number.isFinite(raw) ? Math.max(1, Math.min(60, Math.round(raw))) : 7
-  const items = market.sentimentHistory(days)
+  // points=0 只返回日期/收盘/最高/最低（前端多日趋势只用这四个字段），
+  // 30 日的分钟序列约 200KB，省掉后不到 5KB。
+  const withPoints = String(req.query.points ?? '1') !== '0'
+  const items = market.sentimentHistory(days).map((day) => {
+    if (withPoints) return day
+    const { points: _points, ...rest } = day
+    return { ...rest, points: [] as typeof day.points }
+  })
   res.setHeader('Cache-Control', 'no-store')
   res.json({ days, available: items.length, backfilling: isBackfilling(), items })
 })

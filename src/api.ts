@@ -20,9 +20,9 @@ export function getSnapshot() {
   return json<Snapshot>('/api/snapshot', { cache: 'no-store' })
 }
 
-/** 情绪温度多日归档：今日以外的 7 / 14 / 30 日视图用。 */
+/** 情绪温度多日归档：今日以外的 7 / 14 / 30 日视图用。只取日级汇总，不带分钟序列。 */
 export function getSentimentHistory(days: number) {
-  return json<SentimentHistoryResponse>(`/api/sentiment/history?days=${days}`, { cache: 'no-store' })
+  return json<SentimentHistoryResponse>(`/api/sentiment/history?days=${days}&points=0`, { cache: 'no-store' })
 }
 
 export function forceRefresh() {
