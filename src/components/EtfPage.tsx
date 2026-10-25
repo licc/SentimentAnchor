@@ -2,6 +2,7 @@ import { ArrowLeft, Anchor, BookOpen, Moon, Settings2, Sun, Type } from 'lucide-
 import type { FontSize } from '../App'
 import { useState } from 'react'
 import { useMarketData } from '../hooks/useMarketData'
+import { NowText } from './LiveBits'
 import { clockOf } from '../lib/format'
 import { EtfDesk } from './EtfDesk'
 import { ActiveTradingDesk } from './ActiveTradingDesk'
@@ -50,7 +51,7 @@ export function EtfPage({
         <div className="etf-page-status">
           <span className={`etf-page-dot ${market.connected ? 'is-on' : ''}`} />
           <span>{market.snapshot?.marketStatus ?? '加载中'}</span>
-          <span>{clockOf(market.now)}</span>
+          <NowText />
           <span className="etf-page-sep" />
           <span>T+0 · 量化</span>
         </div>

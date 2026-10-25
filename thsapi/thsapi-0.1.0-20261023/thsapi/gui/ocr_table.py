@@ -65,6 +65,9 @@ class OcrTable:
     rows: list[list[str]] = field(default_factory=list)
     columns: list[int] = field(default_factory=list)
     raw_rows: list[list[Word]] = field(default_factory=list)
+    # 图片裁剪偏移 (dx, dy)：read_table 会先裁掉四周空白，词/列坐标都相对裁剪后的图；
+    # 换算回屏幕坐标（例如单元格补读）时要加回这个偏移。
+    origin: tuple[float, float] = (0.0, 0.0)
 
 
 _ENGINE = None
@@ -489,8 +492,10 @@ def _repair_column(table: OcrTable, rect: tuple[int, int, int, int], header: str
             mid = (top + bottom) / 2
             top, bottom = mid - 13, mid + 13
         score = (lambda x: (sum(ch.isdigit() for ch in x), len(x))) if digit_only else None
-        text = read_cell_best((rect[0] + cols[idx] + 1, rect[1] + top,
-                               rect[0] + cols[idx + 1] - 1, rect[1] + bottom), score=score).strip()
+        # 词/列坐标是相对"裁剪后"的图，补读要回到屏幕坐标，得加回 origin
+        ox, oy = getattr(table, "origin", (0.0, 0.0))
+        text = read_cell_best((rect[0] + ox + cols[idx] + 1, rect[1] + oy + top,
+                               rect[0] + ox + cols[idx + 1] - 1, rect[1] + oy + bottom), score=score).strip()
         if not text or suspect(text):
             continue
         if require_cjk_if_nonascii and any(ord(ch) > 127 for ch in target[idx]):
@@ -539,6 +544,26 @@ def read_text(rect: tuple[int, int, int, int], *, scale: float = 2.0) -> str:
     return "\n".join(lines)
 
 
+def _trim_margins(img: Image.Image, *, pad: int = 8, threshold: int = 150) -> tuple[Image.Image, int, int]:
+    """裁掉底部空白，返回 (新图, dx, dy)。
+
+    只裁底部、保留整幅宽度：列检测依赖竖向网格线，横向裁切会让列边界失效。
+    用较严的阈值（150）只认"文字/深色"，浅灰网格线不算内容，
+    否则整块表格的边框会把包围盒撑满、裁不掉任何东西（实测 245 阈值时占比 100%）。
+    空表（当日委托/成交）通常只剩表头一行，裁完高度降到 2%~15%，OCR 明显变快。
+    """
+    import numpy as np
+
+    gray = np.asarray(img.convert("L"))
+    mask = gray < threshold
+    if not mask.any():
+        return img, 0, 0
+    rows = np.where(mask.any(axis=1))[0]
+    bottom = min(gray.shape[0], int(rows[-1]) + 1 + pad)
+    if bottom >= img.height * 0.9:  # 省不了多少就别裁
+        return img, 0, 0
+    return img.crop((0, 0, img.width, bottom)), 0, 0
+
 def read_table(rect: tuple[int, int, int, int], *, scale: float = 2.5, out_dir: Path | None = None) -> OcrTable:
     """截取 rect 区域并识别成表格。rect 为屏幕坐标 (left, top, right, bottom)。
 
@@ -556,6 +581,10 @@ def read_table(rect: tuple[int, int, int, int], *, scale: float = 2.5, out_dir: 
     if img.width < 30 or img.height < 20:
         raise ThsError("表格区域太小，无法识别")
 
+    # 裁掉四周空白再识别：持仓/委托表经常只有 1 行、甚至空表，
+    # 整块画布送进 OCR 会把 80%~90% 的算力浪费在白底上。
+    img, dx, dy = _trim_margins(img)
+
     # 不缓存列边界：一旦缓存到一帧错的边界，后面所有读取都会系统性错位
     columns = detect_columns(img, use_cache=False)
 
@@ -572,4 +601,6 @@ def read_table(rect: tuple[int, int, int, int], *, scale: float = 2.5, out_dir: 
         w.top /= factor
         w.width /= factor
         w.height /= factor
-    return build_table(img, words, columns)
+    table = build_table(img, words, columns)
+    table.origin = (float(dx), float(dy))
+    return table

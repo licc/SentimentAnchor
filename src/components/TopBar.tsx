@@ -2,15 +2,15 @@ import { useEffect, useRef, useState } from 'react'
 import { Anchor, Bell, BookOpen, ChevronDown, Clock3, Database, Download, KeyRound, LineChart, Moon, RefreshCw, Settings2, Star, Sun, Type, Upload, Wrench } from 'lucide-react'
 import type { FontSize } from '../App'
 import type { Snapshot } from '../../shared/types'
-import { clockOf, timeOf } from '../lib/format'
+import { timeOf } from '../lib/format'
+import { LiveClock, RefreshRing } from './LiveBits'
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 
 export function TopBar({
   snapshot,
-  countdown,
   connected,
-  now,
+  appliedAt,
   refreshing,
   watchCount,
   onRefresh,
@@ -32,9 +32,8 @@ export function TopBar({
   onOpenSettings,
 }: {
   snapshot: Snapshot
-  countdown: number
   connected: boolean
-  now: Date
+  appliedAt: number
   refreshing: boolean
   watchCount: number
   onRefresh: () => void
@@ -55,7 +54,6 @@ export function TopBar({
   onChangeFontSize: (value: FontSize) => void
   onOpenSettings: () => void
 }) {
-  const progress = Math.max(0, Math.min(1, 1 - countdown / (snapshot.refreshMs / 1000)))
   const degraded = snapshot.sources.some((s) => s.state !== 'live')
   const liveLabel = snapshot.marketStatus === '盘中' ? '10s LIVE' : snapshot.marketStatus === '已收盘' ? 'SNAPSHOT' : '10s ENGINE'
   const [toolsOpen, setToolsOpen] = useState(false)
@@ -97,8 +95,7 @@ export function TopBar({
           <div className="topbar-meta">
             <span className="mono">{snapshot.tradingDate}</span>
             <span className="meta-divider" />
-            <Clock3 size={13} />
-            <span className="mono">{clockOf(now)}</span>
+            <LiveClock />
             <span className={`market-state ${snapshot.marketStatus === '盘中' ? 'is-open' : ''}`}>
               {snapshot.marketStatus}
             </span>
@@ -113,22 +110,7 @@ export function TopBar({
         </div>
 
         <div className="topbar-actions">
-          <div
-            className="countdown"
-            style={{ '--progress': `${progress * 360}deg` } as React.CSSProperties}
-            title={`下次刷新 ${countdown}s`}
-          >
-            <div className={`countdown-inner ${snapshot.marketStatus !== '盘中' ? 'is-closed' : ''}`}>
-              {snapshot.marketStatus === '盘中' ? (
-                <>
-                  <span className="mono">{countdown}</span>
-                  <small>s</small>
-                </>
-              ) : (
-                <span className="countdown-closed">{snapshot.marketStatus === '已收盘' ? '收盘' : snapshot.marketStatus}</span>
-              )}
-            </div>
-          </div>
+          <RefreshRing appliedAt={appliedAt} refreshMs={snapshot.refreshMs} marketStatus={snapshot.marketStatus} />
           <button type="button" className="top-btn" onClick={onOpenEtf} title="打开交易台">
             <LineChart size={15} />
             <span>交易</span>

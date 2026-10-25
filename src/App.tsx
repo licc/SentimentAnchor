@@ -154,7 +154,7 @@ export default function App() {
 }
 
 function Dashboard({ authRequired, onLogout, onStealth, theme, onToggleTheme, autoStealth, onToggleAutoStealth, onOpenEtf, fontSize, onChangeFontSize }: { authRequired: boolean; onLogout: () => void; onStealth: () => void; theme: 'light' | 'dark'; onToggleTheme: () => void; autoStealth: boolean; onToggleAutoStealth: () => void; onOpenEtf: () => void; fontSize: FontSize; onChangeFontSize: (value: FontSize) => void }) {
-  const { snapshot, connected, loading, error, refreshing, countdown, now, refresh, alertEvents } = useMarketData()
+  const { snapshot, connected, loading, error, refreshing, appliedAt, refresh, alertEvents } = useMarketData()
   const ai = useAiInsight(snapshot)
   const calendar = useCalendar()
   const alerts = useAlerts()
@@ -163,10 +163,7 @@ function Dashboard({ authRequired, onLogout, onStealth, theme, onToggleTheme, au
   const [modal, setModal] = useState<ModalKind>(null)
   const [drawer, setDrawer] = useState<{ stock: Stock; role?: string } | null>(null)
   const [toast, setToast] = useState<{ message: string; tone: 'up' | 'down' } | null>(null)
-  const [clockNow, setClockNow] = useState(now)
   const [view, setView] = useState<'decision' | 'pro'>(() => (localStorage.getItem('anchor-view') === 'pro' ? 'pro' : 'decision'))
-
-  useEffect(() => setClockNow(now), [now])
 
   useEffect(() => {
     if (!autoStealth) return
@@ -275,9 +272,9 @@ function Dashboard({ authRequired, onLogout, onStealth, theme, onToggleTheme, au
     <div className="app-shell">
       <TopBar
         snapshot={snapshot}
-        countdown={countdown}
+
         connected={connected}
-        now={clockNow}
+        appliedAt={appliedAt}
         refreshing={refreshing}
         watchCount={watchCodes.length}
         onRefresh={refresh}

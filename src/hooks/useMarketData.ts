@@ -9,11 +9,12 @@ export function useMarketData() {
   const [error, setError] = useState<string | null>(null)
   const [alertEvents, setAlertEvents] = useState<AlertEvent[]>([])
   const [refreshing, setRefreshing] = useState(false)
-  const [countdown, setCountdown] = useState(10)
-  const [now, setNow] = useState(() => new Date())
+  // 每秒变化的 now/countdown 不再放在这里：它会让 App 整棵树每秒重渲染一次。
+  // 现在只保留「收到帧的本地时刻」，时钟与倒计时由 LiveBits 里的小组件各自走秒。
+  const [appliedAt, setAppliedAt] = useState(() => Date.now())
   const lastEvent = useRef(0)
   const fallbackBusy = useRef(false)
-  const appliedAt = useRef(Date.now())
+  const appliedAtRef = useRef(Date.now())
 
   const apply = useCallback((next: Snapshot) => {
     setSnapshot(next)
@@ -21,8 +22,8 @@ export function useMarketData() {
     lastEvent.current = Date.now()
     // 倒计时以"收到帧的本地时刻"为基准，不用 nextRefreshAt 减本地时钟：
     // 远程设备（手机/另一台电脑）时钟常有几秒~几分钟偏差，那样算会恒为 0，环形进度条就卡死不动。
-    appliedAt.current = Date.now()
-    setCountdown(Math.max(1, Math.round((next.refreshMs || 10_000) / 1000)))
+    appliedAtRef.current = Date.now()
+    setAppliedAt(appliedAtRef.current)
   }, [])
 
   useEffect(() => {
@@ -113,13 +114,8 @@ export function useMarketData() {
   }, [apply])
 
   useEffect(() => {
+    // 这里只做"兜底轮询"的检查：不再每秒 setState，避免整棵树每秒重渲染。
     const id = setInterval(() => {
-      const current = new Date()
-      setNow(current)
-      // 纯本地推算：距"收到上一帧"过了多少秒，与设备时钟是否准确无关
-      const period = Math.max(1, Math.round((snapshot?.refreshMs ?? 10_000) / 1000))
-      const elapsed = (current.getTime() - appliedAt.current) / 1000
-      setCountdown(Math.max(0, Math.min(period, Math.ceil(period - elapsed))))
       if (document.visibilityState === 'visible' && Date.now() - lastEvent.current > 12_000 && !fallbackBusy.current) {
         fallbackBusy.current = true
         getSnapshot()
@@ -129,9 +125,9 @@ export function useMarketData() {
             fallbackBusy.current = false
           })
       }
-    }, 1000)
+    }, 2_000)
     return () => clearInterval(id)
-  }, [snapshot?.refreshMs, apply])
+  }, [apply])
 
   const refresh = useCallback(async () => {
     setRefreshing(true)
@@ -151,8 +147,8 @@ export function useMarketData() {
     loading,
     error,
     refreshing,
-    countdown,
-    now,
+    /** 收到当前快照的本地时刻（毫秒），供倒计时环自行推算，避免父级每秒重渲染 */
+    appliedAt,
     refresh,
     alertEvents,
     setSnapshot,
