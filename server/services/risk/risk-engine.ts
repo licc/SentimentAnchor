@@ -122,8 +122,18 @@ class RiskEngine {
     const session = sessionCheck(config)
     checks.push(session)
     const broker = await fetchEtfBrokerStatus(fresh).catch(() => null)
-    if (!broker?.ok || broker.mode !== 'live' || !broker.account) {
+    if (!broker?.ok || !broker.account) {
       checks.push({ id: 'broker', label: '交易接口', passed: false, detail: broker?.error || '交易接口不可用' })
+      return checks
+    }
+    if (broker.mode !== 'live') {
+      // 接口是通的，只是演练模式：不能说"不可用"，否则会被误判成适配器故障
+      checks.push({
+        id: 'broker',
+        label: '交易接口',
+        passed: false,
+        detail: `演练模式（${broker.mode}），不能发真实委托；切 live 需先小额验证`,
+      })
       return checks
     }
     const account = broker.account

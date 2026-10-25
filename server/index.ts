@@ -234,7 +234,18 @@ app.post('/api/manual/preflight', async (req, res) => {
     }
     const available = position?.available ?? 0
     const checks = [
-      { id: 'broker', label: '交易接口', passed: Boolean(broker?.ok && broker.mode === 'live'), detail: broker?.ok ? '接口就绪' : '接口不可用' },
+      {
+        id: 'broker',
+        label: '交易接口',
+        passed: Boolean(broker?.ok && broker.mode === 'live'),
+        // dry_run 时不能说"接口不可用"：接口是好的，只是演练模式不允许发真实委托，
+        // 否则用户会以为是适配器挂了，去查错方向。
+        detail: !broker?.ok
+          ? `接口不可用${broker?.error ? `：${broker.error}` : ''}`
+          : broker.mode === 'live'
+            ? '接口就绪'
+            : `演练模式（${broker.mode}），不能发真实委托`,
+      },
       { id: 'position', label: '可卖持仓', passed: available >= quantity, detail: `可卖 ${available} 股` },
       { id: 'lot', label: '整手', passed: quantity % 100 === 0, detail: '数量必须是 100 的整数倍' },
     ]
