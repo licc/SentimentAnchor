@@ -138,6 +138,8 @@ export interface SentimentHistoryResponse {
   days: number
   /** 实际有归档的交易日数量（可能少于请求天数） */
   available: number
+  /** 是否正在后台回填历史 */
+  backfilling: boolean
   /** 升序：最早的在前 */
   items: SentimentDayArchive[]
 }

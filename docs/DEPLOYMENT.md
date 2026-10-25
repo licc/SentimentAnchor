@@ -180,6 +180,7 @@ New-NetFirewallRule -DisplayName 'thsapi 8888 (LAN)'           -Direction Inboun
 | --- | --- |
 | `.env` | 含 `APP_TOKEN`、`ETF_BROKER_KEY` 等口令（已在 `.gitignore`） |
 | `data/` | 运行日志、台账、临时脚本（已在 `.gitignore`） |
+| `data/sentiment.db` | 情绪温度归档（SQLite）。**衍生数据**，丢了可用 `POST /api/sentiment/backfill?days=30` 重新算，不必备份 |
 | `thsapi/.../config.yaml` 的本地改动 | 含 `api_key`、本机 `exe_path`、本机监听地址；仓库内保持默认模板即可 |
 
 提交前自查：

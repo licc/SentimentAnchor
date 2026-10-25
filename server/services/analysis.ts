@@ -337,7 +337,7 @@ function buildSentiment(args: {
   }
 }
 
-function buildChart(points: RawBreadth[]): ChartPoint[] {
+export function buildChart(points: RawBreadth[]): ChartPoint[] {
   const recent = points.slice(-260)
   return recent.map((p) => {
     const ratio = p.rise_count / Math.max(1, p.rise_count + p.fall_count)

@@ -70,10 +70,12 @@ export interface RawLimitPool {
 
 const headers = { Referer: 'https://xuangubao.cn/', Accept: 'application/json' }
 
-export async function fetchBreadthLine(): Promise<{ points: RawBreadth[]; at: number; latencyMs: number }> {
+export async function fetchBreadthLine(date?: string): Promise<{ points: RawBreadth[]; at: number; latencyMs: number }> {
   const fields = 'rise_count,fall_count,limit_up_count,limit_down_count'
+  // 不带 date = 当日；带 date=YYYY-MM-DD 可回溯该交易日的完整 243 个分钟点（用于历史回填）
+  const suffix = date ? `&date=${encodeURIComponent(date)}` : ''
   const res = await fetchJson<XgbResponse<RawBreadth[]>>(
-    `${BASE}/api/market_indicator/line?fields=${fields}`,
+    `${BASE}/api/market_indicator/line?fields=${fields}${suffix}`,
     { headers, timeoutMs: 5_000, retries: 0 },
   )
   if (res.data.code !== 20000 || !Array.isArray(res.data.data) || res.data.data.length === 0) {

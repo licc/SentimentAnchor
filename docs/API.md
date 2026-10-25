@@ -30,6 +30,7 @@ POST /api/logout
 | GET | `/api/watchlist` | 自选 |
 | POST | `/api/watchlist` | 保存自选 |
 | GET | `/api/sentiment/history?days=7` | 情绪温度多日归档（7/14/30 日视图） |
+| POST | `/api/sentiment/backfill?days=30` | 回填历史归档（可加 `&force=1` 重新校验） |
 
 SSE 事件：
 
@@ -52,17 +53,32 @@ GET /api/sentiment/history?days=14
 ```json
 {
   "days": 14,
-  "available": 2,
+  "available": 14,
+  "backfilling": false,
   "items": [
-    { "date": "2026-10-23", "score": 79, "high": 79, "low": 6,
-      "points": [{ "time": "09:25", "temp": 13 }], "updatedAt": "2026-10-25T07:20:00.000Z" }
+    { "date": "2026-09-04", "score": 55, "high": 68, "low": 31,
+      "points": [{ "time": "09:25", "temp": 13 }], "updatedAt": "2026-10-25T07:30:00.000Z" }
   ]
 }
 ```
 
 - `score` 与日内曲线同尺度：当日**最后一个采样点**的温度（不是综合情绪分）。
-- 归档由后端按交易日写入 `data/history/sentiment/<交易日>.json`，每个交易日一个文件，约每分钟刷新一次。
-- **历史从部署当天开始累积**，所以 `available` 常小于请求的 `days`；前端会显示「历史从部署当天累积」提示。
+- 归档存在 **SQLite**：`data/sentiment.db`（表 `sentiment_daily`，一天一行，分钟序列存 JSON 字段）。
+  当日数据由行情 tick 每分钟覆盖写；历史交易日由回填任务补齐。
+- `backfilling: true` 表示后台正在补齐历史，前端会每 5 秒自动重取。
+
+**历史回填**（可手动触发，幂等）：
+
+```http
+POST /api/sentiment/backfill?days=30          # 只补缺失的日期
+POST /api/sentiment/backfill?days=30&force=1  # 重新校验并覆盖已有日期
+```
+
+回填原理：选股宝广度接口支持 `date=YYYY-MM-DD`，可返回任一交易日的 243 个分钟点；
+温度公式只依赖广度四元组，所以历史是**精确复算**而非估算。
+
+> 注意：该接口对**非交易日会静默返回上一个交易日**的数据，因此回填时会校验返回数据自身的日期，
+> 不匹配就丢弃并清理，避免把同一交易日重复写进多个日期（节假日尤其容易踩）。
 
 ## 系统
 

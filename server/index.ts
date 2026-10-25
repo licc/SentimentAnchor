@@ -5,6 +5,8 @@ import express from 'express'
 import type { Response } from 'express'
 import type { Snapshot } from '../shared/types.js'
 import { MarketService } from './services/market.js'
+import { backfillSentiment, isBackfilling } from './services/sentiment-backfill.js'
+import { countDays } from './services/sentiment-store.js'
 import { generateAi, getAiEnvelope, llmConfig } from './services/ai.js'
 import { clearAiConfig, listAiModels, publicAiConfig, saveAiConfig, testAiConfig } from './services/ai-config.js'
 import { getEtfDesk, getEtfHistory } from './services/etf-strategy.js'
@@ -166,14 +168,27 @@ app.get('/api/snapshot', (_req, res) => {
   res.json(market.snapshot)
 })
 
-// 情绪温度的多日归档（前端「7 日 / 14 日 / 30 日」用）。
-// 历史从部署当天开始累积，部署之前没有数据，所以 available 可能小于 days。
+// 情绪温度的多日归档（前端「7 日 / 14 日 / 30 日」用），数据存在 SQLite：data/sentiment.db。
+// 当日由行情 tick 持续写入；历史交易日由 backfillSentiment 回填（选股宝接口支持 date 参数）。
 app.get('/api/sentiment/history', (req, res) => {
   const raw = Number(req.query.days)
   const days = Number.isFinite(raw) ? Math.max(1, Math.min(60, Math.round(raw))) : 7
   const items = market.sentimentHistory(days)
   res.setHeader('Cache-Control', 'no-store')
-  res.json({ days, available: items.length, items })
+  res.json({ days, available: items.length, backfilling: isBackfilling(), items })
+})
+
+// 手动触发历史回填（幂等，已存在的日期跳过）。30 天约需 30 次上游请求，串行 + 轻限速。
+app.post('/api/sentiment/backfill', async (req, res) => {
+  const raw = Number((req.query.days as string | undefined) ?? (req.body as { days?: unknown })?.days ?? 30)
+  const days = Number.isFinite(raw) ? Math.max(1, Math.min(60, Math.round(raw))) : 30
+  const force = req.query.force === '1' || (req.body as { force?: unknown })?.force === true
+  try {
+    const result = await backfillSentiment(days, { force })
+    res.json({ ok: true, ...result })
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : '回填失败' })
+  }
 })
 
 app.get('/api/stream', (req, res) => {
@@ -1065,6 +1080,18 @@ const server = app.listen(PORT, HOST, () => {
   if (HOST !== '127.0.0.1' && HOST !== 'localhost' && !authRequired()) {
     console.warn('[security] HOST 不是本机且未设置 APP_TOKEN，请勿直接暴露到公网')
   }
+  // 历史归档不足 30 天时，后台静默回填（串行、轻限速，不阻塞启动）
+  void (async () => {
+    try {
+      const have = countDays()
+      if (have < 30) {
+        console.log(`[sentiment] 历史仅 ${have} 天，后台回填至 30 天…`)
+        await backfillSentiment(30)
+      }
+    } catch (err) {
+      console.warn('[sentiment] 历史回填失败：', err instanceof Error ? err.message : err)
+    }
+  })()
 })
 
 async function shutdown(signal: string) {

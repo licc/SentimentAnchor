@@ -128,6 +128,8 @@ function DailyTrend({ days, tradingDate }: { days: number; tradingDate: string }
   const [items, setItems] = useState<SentimentDayArchive[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [backfilling, setBackfilling] = useState(false)
+  const [reload, setReload] = useState(0)
   const [hover, setHover] = useState<{ x: number; y: number; item: SentimentDayArchive } | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
 
@@ -138,6 +140,7 @@ function DailyTrend({ days, tradingDate }: { days: number; tradingDate: string }
       .then((res) => {
         if (cancelled) return
         setItems(res.items)
+        setBackfilling(Boolean(res.backfilling))
         setError(null)
       })
       .catch((err) => {
@@ -149,7 +152,14 @@ function DailyTrend({ days, tradingDate }: { days: number; tradingDate: string }
     return () => {
       cancelled = true
     }
-  }, [days, tradingDate])
+  }, [days, tradingDate, reload])
+
+  // 后台回填期间每 5 秒刷新一次，图表会逐步长出来，不需要手动刷新页面
+  useEffect(() => {
+    if (!backfilling) return
+    const id = window.setInterval(() => setReload((n) => n + 1), 5_000)
+    return () => window.clearInterval(id)
+  }, [backfilling])
 
   const innerW = CHART_W - CHART_PAD.l - CHART_PAD.r
   const innerH = CHART_H - CHART_PAD.t - CHART_PAD.b
@@ -164,12 +174,12 @@ function DailyTrend({ days, tradingDate }: { days: number; tradingDate: string }
     return { points, line }
   }, [items, innerH, innerW])
 
-  if (loading) return <div className="chart-empty">正在读取近 {days} 日归档…</div>
+  if (loading && !items.length) return <div className="chart-empty">正在读取近 {days} 日归档…</div>
   if (error) return <div className="chart-empty">读取失败：{error}</div>
   if (!items.length) {
     return (
       <div className="chart-empty">
-        暂无历史归档。归档从本次部署起按交易日累积，明天收盘后这里会出现第 2 个点。
+        {backfilling ? '正在回填历史数据（约 30 秒）…' : '暂无历史归档，稍后会自动补齐。'}
       </div>
     )
   }
@@ -265,7 +275,7 @@ function DailyTrend({ days, tradingDate }: { days: number; tradingDate: string }
         <span><i className="line-key" /> 每日收盘情绪温度（0-100）</span>
         <span>
           共 {items.length} 个交易日 · 均值 {avg.toFixed(1)} · 最高 {high}（{highDay.date.slice(5)}）· 最低 {low}（{lowDay.date.slice(5)}）
-          {items.length < days ? ` · 历史从部署当天累积` : ''}
+          {items.length < days ? (backfilling ? ' · 回填中…' : ' · 历史不足') : ''}
         </span>
       </div>
     </>
