@@ -1,6 +1,7 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Activity, Gauge, MoveDownRight, MoveUpRight, Waves } from 'lucide-react'
-import type { ChartPoint, Sentiment, Snapshot } from '../../shared/types'
+import type { ChartPoint, Sentiment, SentimentDayArchive, Snapshot } from '../../shared/types'
+import { getSentimentHistory } from '../api'
 import { fmtAmount, fmtAmountDelta, fmtCount, fmtSigned } from '../lib/format'
 import { SectionHeader, Tag } from './ui'
 
@@ -25,7 +26,7 @@ export function SentimentLab({ snapshot }: { snapshot: Snapshot }) {
       />
       <div className="lab-grid">
         <ScoreCard sentiment={sentiment} />
-        <ChartCard chart={chart} sentiment={sentiment} />
+        <ChartCard chart={chart} sentiment={sentiment} tradingDate={snapshot.tradingDate} />
         <BreadthCard snapshot={snapshot} />
       </div>
     </section>
@@ -91,12 +92,193 @@ function ScoreCard({ sentiment }: { sentiment: Sentiment }) {
   )
 }
 
-function ChartCard({ chart, sentiment }: { chart: ChartPoint[]; sentiment: Sentiment }) {
+type ChartRange = 'day' | 7 | 14 | 30
+
+const CHART_W = 760
+const CHART_H = 208
+const CHART_PAD = { l: 40, r: 16, t: 18, b: 26 }
+
+function RangeTabs({ value, onChange }: { value: ChartRange; onChange: (next: ChartRange) => void }) {
+  const options: { key: ChartRange; label: string }[] = [
+    { key: 'day', label: '当日' },
+    { key: 7, label: '7 日' },
+    { key: 14, label: '14 日' },
+    { key: 30, label: '30 日' },
+  ]
+  return (
+    <div className="range-tabs" role="tablist" aria-label="情绪温度时间区间">
+      {options.map((o) => (
+        <button
+          key={String(o.key)}
+          type="button"
+          role="tab"
+          aria-selected={value === o.key}
+          className={`range-tab${value === o.key ? ' is-active' : ''}`}
+          onClick={() => onChange(o.key)}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** 近 N 个交易日的情绪温度趋势：每天一个点（取当日归档的收盘温度）。 */
+function DailyTrend({ days, tradingDate }: { days: number; tradingDate: string }) {
+  const [items, setItems] = useState<SentimentDayArchive[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [hover, setHover] = useState<{ x: number; y: number; item: SentimentDayArchive } | null>(null)
+  const svgRef = useRef<SVGSVGElement>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    getSentimentHistory(days)
+      .then((res) => {
+        if (cancelled) return
+        setItems(res.items)
+        setError(null)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : '读取历史失败')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [days, tradingDate])
+
+  const innerW = CHART_W - CHART_PAD.l - CHART_PAD.r
+  const innerH = CHART_H - CHART_PAD.t - CHART_PAD.b
+  const geometry = useMemo(() => {
+    if (!items.length) return null
+    const points = items.map((item, i) => {
+      const x = CHART_PAD.l + (items.length === 1 ? innerW / 2 : (i / (items.length - 1)) * innerW)
+      const y = CHART_PAD.t + (1 - Math.max(0, Math.min(100, item.score)) / 100) * innerH
+      return { x, y, item }
+    })
+    const line = points.map((pt, i) => `${i === 0 ? 'M' : 'L'} ${pt.x.toFixed(2)} ${pt.y.toFixed(2)}`).join(' ')
+    return { points, line }
+  }, [items, innerH, innerW])
+
+  if (loading) return <div className="chart-empty">正在读取近 {days} 日归档…</div>
+  if (error) return <div className="chart-empty">读取失败：{error}</div>
+  if (!items.length) {
+    return (
+      <div className="chart-empty">
+        暂无历史归档。归档从本次部署起按交易日累积，明天收盘后这里会出现第 2 个点。
+      </div>
+    )
+  }
+
+  const scores = items.map((i) => i.score)
+  const high = Math.max(...scores)
+  const low = Math.min(...scores)
+  const avg = scores.reduce((s, v) => s + v, 0) / scores.length
+  const highDay = items[scores.indexOf(high)]
+  const lowDay = items[scores.indexOf(low)]
+  const labelIdx = items.length <= 3 ? items.map((_, i) => i) : [0, Math.floor((items.length - 1) / 2), items.length - 1]
+
+  function onMove(e: React.MouseEvent<SVGSVGElement>) {
+    const svg = svgRef.current
+    if (!svg || !geometry) return
+    const rect = svg.getBoundingClientRect()
+    const rx = ((e.clientX - rect.left) / rect.width) * CHART_W
+    let best = geometry.points[0]
+    for (const pt of geometry.points) {
+      if (Math.abs(pt.x - rx) < Math.abs(best.x - rx)) best = pt
+    }
+    setHover({ x: best.x, y: best.y, item: best.item })
+  }
+
+  return (
+    <>
+      <div className="chart-wrap">
+        <svg
+          ref={svgRef}
+          viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+          className="sentiment-chart"
+          onMouseMove={onMove}
+          onMouseLeave={() => setHover(null)}
+          role="img"
+          aria-label={`近 ${days} 个交易日情绪温度趋势`}
+        >
+          {[20, 40, 60, 80].map((v) => {
+            const y = CHART_PAD.t + (1 - v / 100) * innerH
+            return (
+              <g key={v}>
+                <line x1={CHART_PAD.l} y1={y} x2={CHART_W - CHART_PAD.r} y2={y} className="chart-grid" />
+                <text x={CHART_PAD.l - 8} y={y + 3} className="chart-y">{v}</text>
+              </g>
+            )
+          })}
+          <line
+            x1={CHART_PAD.l}
+            y1={CHART_PAD.t + (1 - 50 / 100) * innerH}
+            x2={CHART_W - CHART_PAD.r}
+            y2={CHART_PAD.t + (1 - 50 / 100) * innerH}
+            className="chart-midline"
+          />
+          {geometry ? (
+            <>
+              <path d={geometry.line} fill="none" stroke="#c53b2c" strokeWidth="2.2" strokeLinejoin="round" className="chart-line" />
+              {geometry.points.map((pt) => (
+                <circle key={pt.item.date} cx={pt.x} cy={pt.y} r={items.length > 20 ? 1.6 : 2.6} className="chart-dot" />
+              ))}
+            </>
+          ) : null}
+          {labelIdx.map((idx, i) => {
+            const pt = geometry?.points[idx]
+            if (!pt) return null
+            return (
+              <text
+                key={items[idx].date}
+                x={pt.x}
+                y={CHART_H - 8}
+                className="chart-x"
+                textAnchor={i === 0 ? 'start' : i === labelIdx.length - 1 ? 'end' : 'middle'}
+              >
+                {items[idx].date.slice(5)}
+              </text>
+            )
+          })}
+          {hover ? (
+            <g>
+              <line x1={hover.x} y1={CHART_PAD.t} x2={hover.x} y2={CHART_PAD.t + innerH} className="chart-cursor" />
+              <circle cx={hover.x} cy={hover.y} r="4" className="chart-hover-dot" />
+            </g>
+          ) : null}
+        </svg>
+        {hover ? (
+          <div className="chart-tooltip" style={{ left: `${(hover.x / CHART_W) * 100}%`, top: `${(hover.y / CHART_H) * 100}%` }}>
+            <div className="ct-time">{hover.item.date}</div>
+            <div className="ct-row"><span>收盘温度</span><b>{hover.item.score}</b></div>
+            <div className="ct-row"><span>当日最高</span><b className="up">{hover.item.high}</b></div>
+            <div className="ct-row"><span>当日最低</span><b className="down">{hover.item.low}</b></div>
+          </div>
+        ) : null}
+      </div>
+      <div className="chart-foot">
+        <span><i className="line-key" /> 每日收盘情绪温度（0-100）</span>
+        <span>
+          共 {items.length} 个交易日 · 均值 {avg.toFixed(1)} · 最高 {high}（{highDay.date.slice(5)}）· 最低 {low}（{lowDay.date.slice(5)}）
+          {items.length < days ? ` · 历史从部署当天累积` : ''}
+        </span>
+      </div>
+    </>
+  )
+}
+
+function ChartCard({ chart, sentiment, tradingDate }: { chart: ChartPoint[]; sentiment: Sentiment; tradingDate: string }) {
   const W = 760
   const H = 208
   const pad = { l: 40, r: 16, t: 18, b: 26 }
   const innerW = W - pad.l - pad.r
   const innerH = H - pad.t - pad.b
+  const [range, setRange] = useState<ChartRange>('day')
   const [hover, setHover] = useState<{ x: number; y: number; p: ChartPoint } | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const geometry = useMemo(() => {
@@ -110,6 +292,19 @@ function ChartCard({ chart, sentiment }: { chart: ChartPoint[]; sentiment: Senti
     const area = `${line} L ${points[points.length - 1].x.toFixed(2)} ${pad.t + innerH} L ${points[0].x.toFixed(2)} ${pad.t + innerH} Z`
     return { points, line, area }
   }, [chart, innerH, innerW, pad.l, pad.t])
+
+  if (range !== 'day') {
+    return (
+      <article className="lab-card chart-card">
+        <div className="lab-card-head">
+          <span className="eyebrow"><Activity size={12} /> 情绪温度 · 近 {range} 日</span>
+          <RangeTabs value={range} onChange={setRange} />
+        </div>
+        <DailyTrend days={range} tradingDate={tradingDate} />
+      </article>
+    )
+  }
+
   if (!geometry) return <article className="lab-card chart-card">暂无分时数据</article>
 
   const high = Math.max(...chart.map((p) => p.temp))
@@ -133,6 +328,7 @@ function ChartCard({ chart, sentiment }: { chart: ChartPoint[]; sentiment: Senti
     <article className="lab-card chart-card">
       <div className="lab-card-head">
         <span className="eyebrow"><Activity size={12} /> 日内情绪温度</span>
+        <RangeTabs value={range} onChange={setRange} />
         <div className="chart-head-stats">
           <span>当前 <b className="mono">{last.temp}</b></span>
           <span>高 <b className="mono">{high}</b></span>

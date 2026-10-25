@@ -1,4 +1,4 @@
-import type { Snapshot, WatchlistConfig } from '../shared/types'
+import type { SentimentHistoryResponse, Snapshot, WatchlistConfig } from '../shared/types'
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init)
@@ -18,6 +18,11 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
 
 export function getSnapshot() {
   return json<Snapshot>('/api/snapshot', { cache: 'no-store' })
+}
+
+/** 情绪温度多日归档：今日以外的 7 / 14 / 30 日视图用。 */
+export function getSentimentHistory(days: number) {
+  return json<SentimentHistoryResponse>(`/api/sentiment/history?days=${days}`, { cache: 'no-store' })
 }
 
 export function forceRefresh() {

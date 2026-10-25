@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { ForeignFear, MarketIndex, Sector, Snapshot, SourceStatus, Stock, WatchlistConfig } from '../../shared/types.js'
+import type { ForeignFear, MarketIndex, Sector, SentimentDayArchive, Snapshot, SourceStatus, Stock, WatchlistConfig } from '../../shared/types.js'
 import { fetchAmountBaseline, fetchAmountWindow, fetchVolumeBaseline, type AmountBaseline, type AmountWindow } from '../providers/eastmoney.js'
 import { fetchThsAmountBaseline } from '../providers/ths.js'
 import { fetchGlobalFear } from '../providers/global-fear.js'
@@ -13,6 +13,8 @@ const ROOT = process.cwd()
 const DATA_DIR = path.join(ROOT, 'data')
 const CONFIG_PATH = path.join(DATA_DIR, 'config.json')
 const SNAPSHOT_PATH = path.join(DATA_DIR, 'last-snapshot.json')
+// 每日情绪温度归档：一个交易日一个文件，供前端"7 日 / 14 日 / 30 日"趋势使用
+const SENTIMENT_HISTORY_DIR = path.join(DATA_DIR, 'history', 'sentiment')
 
 interface Cache<T> {
   value: T
@@ -412,6 +414,8 @@ export class MarketService {
     }
     this.snapshot = snapshot
     this.persistSnapshot()
+    // 每 6 个 tick（约 1 分钟）归档一次当日序列，避免每 10 秒写盘
+    if (this.tickCount <= 1 || this.tickCount % 6 === 0) this.archiveSentimentDay(snapshot)
     for (const listener of this.listeners) {
       try { listener(snapshot) } catch { /* client stream errors are isolated */ }
     }
@@ -428,6 +432,55 @@ export class MarketService {
       atomicWriteJson(SNAPSHOT_PATH, this.snapshot)
     } catch {
       // Persistence is best-effort only.
+    }
+  }
+
+  /** 把当日的分钟级情绪温度写入 data/history/sentiment/<交易日>.json（覆盖写）。 */
+  private archiveSentimentDay(snapshot: Snapshot) {
+    try {
+      if (!snapshot.chart.length) return
+      const points = snapshot.chart.map((p) => ({ time: p.time, temp: p.temp }))
+      const temps = points.map((p) => p.temp)
+      const archive: SentimentDayArchive = {
+        date: snapshot.tradingDate,
+        // 与日内曲线同尺度：取当日最后一个采样点的温度（不是综合情绪分）
+        score: temps[temps.length - 1],
+        high: Math.max(...temps),
+        low: Math.min(...temps),
+        points,
+        updatedAt: new Date().toISOString(),
+      }
+      fs.mkdirSync(SENTIMENT_HISTORY_DIR, { recursive: true })
+      atomicWriteJson(path.join(SENTIMENT_HISTORY_DIR, `${snapshot.tradingDate}.json`), archive)
+    } catch {
+      // 归档失败不影响行情主流程
+    }
+  }
+
+  /**
+   * 读取最近 days 个交易日的情绪归档（升序）。
+   * 历史从本次部署开始累积：部署当天之前没有归档，返回数量可能少于 days。
+   */
+  sentimentHistory(days: number): SentimentDayArchive[] {
+    try {
+      fs.mkdirSync(SENTIMENT_HISTORY_DIR, { recursive: true })
+      const files = fs
+        .readdirSync(SENTIMENT_HISTORY_DIR)
+        .filter((name) => /^\d{4}-\d{2}-\d{2}\.json$/.test(name))
+        .sort()
+        .slice(-Math.max(1, days))
+      const items: SentimentDayArchive[] = []
+      for (const name of files) {
+        try {
+          const raw = JSON.parse(fs.readFileSync(path.join(SENTIMENT_HISTORY_DIR, name), 'utf8')) as SentimentDayArchive
+          if (raw?.date && Array.isArray(raw.points)) items.push(raw)
+        } catch {
+          // 单个文件损坏时跳过，不影响其它交易日
+        }
+      }
+      return items
+    } catch {
+      return []
     }
   }
 

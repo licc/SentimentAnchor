@@ -121,6 +121,27 @@ export interface ChartPoint {
   temp: number
 }
 
+/** 单个交易日的情绪温度归档（供"7 日 / 14 日 / 30 日"趋势使用）。 */
+export interface SentimentDayArchive {
+  date: string
+  /** 当日收盘（或最后一次采样）的情绪温度 */
+  score: number
+  high: number
+  low: number
+  /** 当日分钟级序列，仅保留时间与温度 */
+  points: { time: string; temp: number }[]
+  updatedAt: string
+}
+
+export interface SentimentHistoryResponse {
+  /** 请求的天数 */
+  days: number
+  /** 实际有归档的交易日数量（可能少于请求天数） */
+  available: number
+  /** 升序：最早的在前 */
+  items: SentimentDayArchive[]
+}
+
 export interface SentimentComponent {
   label: string
   value: number

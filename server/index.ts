@@ -166,6 +166,16 @@ app.get('/api/snapshot', (_req, res) => {
   res.json(market.snapshot)
 })
 
+// 情绪温度的多日归档（前端「7 日 / 14 日 / 30 日」用）。
+// 历史从部署当天开始累积，部署之前没有数据，所以 available 可能小于 days。
+app.get('/api/sentiment/history', (req, res) => {
+  const raw = Number(req.query.days)
+  const days = Number.isFinite(raw) ? Math.max(1, Math.min(60, Math.round(raw))) : 7
+  const items = market.sentimentHistory(days)
+  res.setHeader('Cache-Control', 'no-store')
+  res.json({ days, available: items.length, items })
+})
+
 app.get('/api/stream', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
   res.setHeader('Cache-Control', 'no-cache, no-transform')

@@ -29,6 +29,7 @@ POST /api/logout
 | POST | `/api/alerts/read` | 标记已读 |
 | GET | `/api/watchlist` | 自选 |
 | POST | `/api/watchlist` | 保存自选 |
+| GET | `/api/sentiment/history?days=7` | 情绪温度多日归档（7/14/30 日视图） |
 
 SSE 事件：
 
@@ -39,6 +40,29 @@ data: { ...Snapshot }
 event: alert
 data: { ...AlertEvent }
 ```
+
+### 情绪温度多日归档
+
+前端「情绪结构」卡片可在 **当日 / 7 日 / 14 日 / 30 日** 之间切换。多日视图读这个接口：
+
+```http
+GET /api/sentiment/history?days=14
+```
+
+```json
+{
+  "days": 14,
+  "available": 2,
+  "items": [
+    { "date": "2026-10-23", "score": 79, "high": 79, "low": 6,
+      "points": [{ "time": "09:25", "temp": 13 }], "updatedAt": "2026-10-25T07:20:00.000Z" }
+  ]
+}
+```
+
+- `score` 与日内曲线同尺度：当日**最后一个采样点**的温度（不是综合情绪分）。
+- 归档由后端按交易日写入 `data/history/sentiment/<交易日>.json`，每个交易日一个文件，约每分钟刷新一次。
+- **历史从部署当天开始累积**，所以 `available` 常小于请求的 `days`；前端会显示「历史从部署当天累积」提示。
 
 ## 系统
 

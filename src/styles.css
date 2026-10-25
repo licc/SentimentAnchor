@@ -6887,3 +6887,49 @@ a {
 @media (max-width: 900px) {
   .tool-menu { right: -36px; }
 }
+
+/* ── 情绪温度区间切换（当日 / 7 日 / 14 日 / 30 日） ───────────────── */
+.range-tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.38);
+  flex: 0 0 auto;
+}
+
+.range-tab {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.2;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.range-tab:hover { color: var(--ink); }
+
+.range-tab.is-active {
+  background: var(--ink);
+  color: var(--paper);
+  font-weight: 600;
+}
+
+.chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 198px;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.9;
+}
+
+:root[data-theme="dark"] .range-tabs { background: rgba(255, 255, 255, 0.06); }
+:root[data-theme="dark"] .range-tab.is-active { background: var(--ink); color: var(--paper); }
