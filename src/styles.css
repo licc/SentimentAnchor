@@ -6933,3 +6933,15 @@ a {
 
 :root[data-theme="dark"] .range-tabs { background: rgba(255, 255, 255, 0.06); }
 :root[data-theme="dark"] .range-tab.is-active { background: var(--ink); color: var(--paper); }
+/* 多日视图：每日高低区间的竖线（下引线），表现日内振幅 */
+.chart-wick {
+  stroke: #c53b2c;
+  stroke-width: 1.1;
+  opacity: 0.26;
+  stroke-linecap: round;
+}
+
+.chart-wick.is-hover {
+  opacity: 0.85;
+  stroke-width: 1.6;
+}

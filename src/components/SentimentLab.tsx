@@ -234,9 +234,24 @@ function DailyTrend({ days, tradingDate }: { days: number; tradingDate: string }
           />
           {geometry ? (
             <>
+              {/* 每日高低区间（下引线）：只有收盘点会丢掉日内振幅，比如 10-23 从 6 冲到 79 */}
+              {geometry.points.map((pt) => {
+                const yHigh = CHART_PAD.t + (1 - Math.max(0, Math.min(100, pt.item.high)) / 100) * innerH
+                const yLow = CHART_PAD.t + (1 - Math.max(0, Math.min(100, pt.item.low)) / 100) * innerH
+                return (
+                  <line
+                    key={`wick-${pt.item.date}`}
+                    x1={pt.x}
+                    y1={yHigh}
+                    x2={pt.x}
+                    y2={yLow}
+                    className={`chart-wick${hover?.item.date === pt.item.date ? ' is-hover' : ''}`}
+                  />
+                )
+              })}
               <path d={geometry.line} fill="none" stroke="#c53b2c" strokeWidth="2.2" strokeLinejoin="round" className="chart-line" />
               {geometry.points.map((pt) => (
-                <circle key={pt.item.date} cx={pt.x} cy={pt.y} r={items.length > 20 ? 1.6 : 2.6} className="chart-dot" />
+                <circle key={pt.item.date} cx={pt.x} cy={pt.y} r={items.length > 20 ? 1.8 : 2.8} className="chart-dot" />
               ))}
             </>
           ) : null}
@@ -272,7 +287,7 @@ function DailyTrend({ days, tradingDate }: { days: number; tradingDate: string }
         ) : null}
       </div>
       <div className="chart-foot">
-        <span><i className="line-key" /> 每日收盘情绪温度（0-100）</span>
+        <span><i className="line-key" /> 收盘温度（点）· 竖线为当日最高-最低</span>
         <span>
           共 {items.length} 个交易日 · 均值 {avg.toFixed(1)} · 最高 {high}（{highDay.date.slice(5)}）· 最低 {low}（{lowDay.date.slice(5)}）
           {items.length < days ? (backfilling ? ' · 回填中…' : ' · 历史不足') : ''}
