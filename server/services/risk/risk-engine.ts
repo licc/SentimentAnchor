@@ -148,24 +148,25 @@ class RiskEngine {
     const positions = sane.positions
     const exposure = positions.reduce((sum, p) => sum + (p.marketValue || 0), 0)
     const notional = ctx.price * ctx.quantity
-    checks.push({ id: 'quote', label: '行情可用 / 停牌', passed: Boolean(targetQuote && targetQuote.price > 0), detail: '目标标的行情不可用或疑似停牌' })
-    checks.push({ id: 'st', label: 'ST / 退市风险', passed: !/ST|退/.test(targetQuote?.name ?? ''), detail: `${targetQuote?.name ?? ctx.symbol} 命中 ST/退市过滤` })
+    checks.push({ id: 'quote', label: '行情可用 / 停牌', passed: Boolean(targetQuote && targetQuote.price > 0), detail: targetQuote && targetQuote.price > 0 ? `行情 ${targetQuote.price}` : '目标标的行情不可用或疑似停牌' })
+    checks.push({ id: 'st', label: 'ST / 退市风险', passed: !/ST|退/.test(targetQuote?.name ?? ''), detail: /ST|退/.test(targetQuote?.name ?? '') ? `${targetQuote?.name ?? ctx.symbol} 命中 ST/退市过滤` : `${targetQuote?.name ?? ctx.symbol} 非 ST` })
     const announcements = await fetchAnnouncements(ctx.symbol).catch(() => [])
     const risky = announcements.filter((a) => a.risk).slice(0, 2)
     checks.push({ id: 'announcement', label: '公告风险', passed: risky.length === 0, detail: risky.length ? `近期公告风险：${risky.map((a) => a.title).join('；')}` : '近期无高风险公告' })
-    checks.push({ id: 'price', label: '价格有效', passed: Number.isFinite(ctx.price) && ctx.price > 0, detail: '委托价格必须大于 0' })
-    checks.push({ id: 'lot', label: '整手', passed: Number.isInteger(ctx.quantity) && ctx.quantity % 100 === 0, detail: '委托数量必须是 100 股整数倍' })
-    checks.push({ id: 'order-limit', label: '单笔金额', passed: notional <= config.buy.maxOrderAmount, detail: `单笔 ${notional.toFixed(0)} 超过上限 ${config.buy.maxOrderAmount}` })
+    checks.push({ id: 'price', label: '价格有效', passed: Number.isFinite(ctx.price) && ctx.price > 0, detail: Number.isFinite(ctx.price) && ctx.price > 0 ? `委托价 ${ctx.price.toFixed(3)}` : '委托价格必须大于 0' })
+    checks.push({ id: 'lot', label: '整手', passed: Number.isInteger(ctx.quantity) && ctx.quantity % 100 === 0, detail: Number.isInteger(ctx.quantity) && ctx.quantity % 100 === 0 ? `数量 ${ctx.quantity} 股` : '委托数量必须是 100 股整数倍' })
+    checks.push({ id: 'order-limit', label: '单笔金额', passed: notional <= config.buy.maxOrderAmount, detail: notional <= config.buy.maxOrderAmount ? `单笔 ${notional.toFixed(0)} ≤ 上限 ${config.buy.maxOrderAmount}` : `单笔 ${notional.toFixed(0)} 超过上限 ${config.buy.maxOrderAmount}` })
     checks.push({ id: 'cash', label: '可用资金', passed: account.cashAvailable - pendingBuyNotional - notional >= config.buy.minCashReserve, detail: `可用 ${account.cashAvailable.toFixed(0)}，在途买入 ${pendingBuyNotional.toFixed(0)}，需保留 ${config.buy.minCashReserve}` })
     const pos = positions.find((p) => p.symbol === ctx.symbol)
     const symbolValue = (pos?.marketValue || 0) + notional
-    checks.push({ id: 'symbol-exposure', label: '单票集中度', passed: symbolValue <= account.totalAsset * config.buy.maxSymbolPct / 100, detail: `单票 ${symbolValue.toFixed(0)} 超过 ${config.buy.maxSymbolPct}% 上限` })
-    checks.push({ id: 'account-exposure', label: '账户总仓位', passed: exposure + pendingBuyNotional + notional <= account.totalAsset * config.buy.maxAccountExposurePct / 100, detail: `买入后总仓位超过 ${config.buy.maxAccountExposurePct}%` })
+    checks.push({ id: 'symbol-exposure', label: '单票集中度', passed: symbolValue <= account.totalAsset * config.buy.maxSymbolPct / 100, detail: symbolValue <= account.totalAsset * config.buy.maxSymbolPct / 100 ? `单票 ${symbolValue.toFixed(0)} ≤ 上限 ${(account.totalAsset * config.buy.maxSymbolPct / 100).toFixed(0)}（${config.buy.maxSymbolPct}%）` : `单票 ${symbolValue.toFixed(0)} 超过 ${config.buy.maxSymbolPct}% 上限` })
+    const afterExposurePct = account.totalAsset > 0 ? ((exposure + pendingBuyNotional + notional) / account.totalAsset) * 100 : 0
+    checks.push({ id: 'account-exposure', label: '账户总仓位', passed: afterExposurePct <= config.buy.maxAccountExposurePct, detail: afterExposurePct <= config.buy.maxAccountExposurePct ? `买入后总仓位 ${afterExposurePct.toFixed(1)}% ≤ 上限 ${config.buy.maxAccountExposurePct}%` : `买入后总仓位 ${afterExposurePct.toFixed(1)}% 超过 ${config.buy.maxAccountExposurePct}%` })
     const snap = this.snapshotProvider?.()
     const maxAgeSec = Number(policyParam('data-freshness').maxAgeSec ?? 30)
-    checks.push({ id: 'data-freshness', label: '行情新鲜度', passed: Boolean(snap && Date.now() - Date.parse(snap.generatedAt) < maxAgeSec * 1000 && snap.marketStatus === '盘中'), detail: `行情超过 ${maxAgeSec} 秒未更新或不在盘中` })
+    checks.push({ id: 'data-freshness', label: '行情新鲜度', passed: Boolean(snap && Date.now() - Date.parse(snap.generatedAt) < maxAgeSec * 1000 && snap.marketStatus === '盘中'), detail: snap && Date.now() - Date.parse(snap.generatedAt) < maxAgeSec * 1000 && snap.marketStatus === '盘中' ? `行情 ${Math.round((Date.now() - Date.parse(snap.generatedAt)) / 1000)} 秒前更新 · ${snap.marketStatus}` : `行情超过 ${maxAgeSec} 秒未更新或不在盘中` })
     const dailyLossPct = account.totalAsset > 0 ? (account.pnlToday / account.totalAsset) * 100 : 0
-    checks.push({ id: 'daily-loss', label: '当日亏损熔断', passed: dailyLossPct > -config.buy.maxDailyLossPct, detail: `当日亏损 ${dailyLossPct.toFixed(2)}% 触及 -${config.buy.maxDailyLossPct}%` })
+    checks.push({ id: 'daily-loss', label: '当日亏损熔断', passed: dailyLossPct > -config.buy.maxDailyLossPct, detail: dailyLossPct > -config.buy.maxDailyLossPct ? `当日盈亏 ${dailyLossPct.toFixed(2)}%（熔断线 -${config.buy.maxDailyLossPct}%）` : `当日亏损 ${dailyLossPct.toFixed(2)}% 触及 -${config.buy.maxDailyLossPct}%` })
     const intraday = await analyzeIntraday(ctx.symbol).catch(() => null)
     const last = intraday?.bars[intraday.bars.length - 1]
     const structure = intraday?.stats
@@ -185,13 +186,13 @@ class RiskEngine {
     const budget = checkEngineBudget({ source: ctx.source, symbol: ctx.symbol, price: ctx.price, quantity: ctx.quantity, totalAsset: account.totalAsset, cashAvailable: account.cashAvailable, positions, pendingBuyNotional })
     checks.push({ id: 'pending-buys', label: '在途买入', passed: pendingBuyNotional < account.cashAvailable, detail: `在途买入占用 ¥${pendingBuyNotional.toFixed(0)}` })
     checks.push({ id: 'engine-budget', label: '策略额度', passed: budget.passed, detail: budget.detail })
-    checks.push({ id: 'blocked-code', label: '黑名单', passed: !config.buy.blockedCodes.includes(ctx.symbol), detail: `${ctx.symbol} 在风控黑名单` })
+    checks.push({ id: 'blocked-code', label: '黑名单', passed: !config.buy.blockedCodes.includes(ctx.symbol), detail: config.buy.blockedCodes.includes(ctx.symbol) ? `${ctx.symbol} 在风控黑名单` : `${ctx.symbol} 不在黑名单` })
     const today = shanghaiDate()
     const buysToday = this.events.filter((e) => e.kind === 'buy' && e.time.startsWith(today) && e.status !== 'blocked').length
-    checks.push({ id: 'daily-limit', label: '当日买入次数', passed: buysToday < config.buy.maxOrdersPerDay, detail: `今日买入已达 ${config.buy.maxOrdersPerDay} 次` })
+    checks.push({ id: 'daily-limit', label: '当日买入次数', passed: buysToday < config.buy.maxOrdersPerDay, detail: buysToday < config.buy.maxOrdersPerDay ? `今日已买入 ${buysToday} / ${config.buy.maxOrdersPerDay} 次` : `今日买入已达 ${config.buy.maxOrdersPerDay} 次` })
     const cutoff = Date.now() - config.buy.duplicateWindowSec * 1000
     const duplicate = this.events.some((e) => e.kind === 'buy' && e.symbol === ctx.symbol && e.allowed && Date.parse(e.time) >= cutoff)
-    checks.push({ id: 'duplicate', label: '重复委托', passed: !duplicate, detail: `${ctx.symbol} 在 ${config.buy.duplicateWindowSec}s 内已有买入` })
+    checks.push({ id: 'duplicate', label: '重复委托', passed: !duplicate, detail: duplicate ? `${ctx.symbol} 在 ${config.buy.duplicateWindowSec}s 内已有买入` : `${ctx.symbol} 近期无重复买入` })
     for (const rule of this.rules) checks.push(await rule.evaluate(ctx))
     return checks
   }
@@ -213,7 +214,14 @@ function sessionCheck(config: RiskConfig): RiskCheck {
     const [a, b] = s.split('-')
     return minutes >= toMinutes(a) && minutes <= toMinutes(b)
   })
-  return { id: 'session', label: '交易时段', passed: ok, detail: `当前不在允许买入时段（${config.buy.allowedSessions.join(' / ')}）` }
+  return {
+    id: 'session',
+    label: '交易时段',
+    passed: ok,
+    detail: ok
+      ? `处于允许买入时段（${config.buy.allowedSessions.join(' / ')}）`
+      : `当前不在允许买入时段（${config.buy.allowedSessions.join(' / ')}）`,
+  }
 }
 
 function toMinutes(s: string): number {
