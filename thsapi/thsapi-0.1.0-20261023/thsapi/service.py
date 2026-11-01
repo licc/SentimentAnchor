@@ -50,6 +50,25 @@ def _co_init() -> None:
     return None
 
 
+def _explain_gui_error(exc: Exception) -> str:
+    """把底层异常翻译成"用户能照着做"的提示。
+
+    最常见的 `screen grab failed` **不是**接口故障，而是当前 Windows 桌面会话
+    不可截屏：远程桌面断开、屏幕锁定、或控制台停在登录界面时都会这样。
+    此时同花顺窗口还在、进程也正常，但 GDI 拿不到桌面像素，所有读表都会失败
+    —— 后端会因此认为接口不可用，前端就可能显示成"无法下单"。
+    """
+    text = str(exc)
+    if "screen grab failed" in text.lower():
+        return (
+            "界面操作失败: screen grab failed —— 当前桌面会话不可截屏。"
+            "常见原因：远程桌面已断开、屏幕已锁定、或控制台停在登录界面。"
+            "处理：重新连接远程桌面 / 解锁屏幕；若会话状态是 Disc，"
+            "可在管理员命令行执行 tscon <会话ID> /dest:console 把会话接回控制台。"
+        )
+    return f"界面操作失败: {text}"
+
+
 class MainThreadRunner:
     """把 GUI 操作调度到主线程执行。
 
@@ -212,7 +231,7 @@ class TradingService:
             raise
         except Exception as exc:  # noqa: BLE001
             log.exception("GUI 操作异常")
-            raise ThsError(f"界面操作失败: {exc}") from exc
+            raise ThsError(_explain_gui_error(exc)) from exc
 
     def shutdown(self) -> None:
         self.runner.stop()

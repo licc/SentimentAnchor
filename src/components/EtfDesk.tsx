@@ -141,8 +141,22 @@ export function EtfDesk({ onToast }: { onToast: (message: string, tone?: 'up' | 
       <div className={`etf-live-banner ${live ? 'is-live' : 'is-dry'}`}>
         <div className="etf-live-guide">
           <span className="etf-live-kicker">今日实战</span>
-          <b>{live ? '接口 LIVE，可手动下单' : `接口 ${broker.mode}，当前无法下单`}</b>
-          <p>{live ? '信号确认后进入实战下单；每一步都需要你手动确认，不会自动交易。' : '先在交易客户端切到 live 并登录，再回来刷新；dry_run 下不会发送真实委托。'}</p>
+          {/* 接口不可用时优先显示真实错误（例如会话断开导致的 screen grab failed），
+              不能只凭 broker.mode 说"dry_run"——那会把截屏失败误报成演练模式。 */}
+          <b>
+            {live
+              ? '接口 LIVE，可手动下单'
+              : broker.ok
+                ? `接口 ${broker.mode}，当前无法下单`
+                : '交易接口异常，当前无法下单'}
+          </b>
+          <p>
+            {live
+              ? '信号确认后进入实战下单；每一步都需要你手动确认，不会自动交易。'
+              : broker.ok
+                ? '先在交易客户端切到 live 并登录，再回来刷新；dry_run 下不会发送真实委托。'
+                : (broker.error ?? '交易接口不可用：请确认同花顺已登录、桌面会话可截屏（远程桌面断开/锁屏会导致读表失败）。')}
+          </p>
           <div className="etf-steps"><span>① 接口就绪</span><span>② 看信号</span><span>③ 手动下单</span><span>④ 收盘记录</span></div>
         </div>
         <div className="etf-live-cta">
