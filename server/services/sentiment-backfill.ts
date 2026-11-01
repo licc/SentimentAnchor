@@ -53,6 +53,28 @@ export interface BackfillResult {
 }
 
 /**
+ * 最近 `limit` 个交易日（不含今天）里，库里缺的日期。
+ *
+ * 用途：启动自检。只看"最近"而不是全部历史——节假日本来就没有数据，
+ * 靠上游返回日期校验也补不上，若按全历史判断会每次都误报缺口。
+ */
+export function recentGapDays(limit = 5): string[] {
+  const have = new Set(getDates())
+  const gaps: string[] = []
+  let cursor = shiftDate(todayInShanghai(), -1)
+  let scanned = 0
+  while (scanned < limit && gaps.length < limit) {
+    const dow = weekday(cursor)
+    if (dow !== 0 && dow !== 6) {
+      scanned += 1
+      if (!have.has(cursor)) gaps.push(cursor)
+    }
+    cursor = shiftDate(cursor, -1)
+  }
+  return gaps
+}
+
+/**
  * 从今天往前回填，直到库里有 `days` 个交易日或试完候选日期。
  * 幂等：已存在的日期会跳过（除非 force）。
  */
@@ -69,9 +91,12 @@ export async function backfillSentiment(days = 30, opts: { force?: boolean } = {
 
   try {
     let cursor = shiftDate(todayInShanghai(), -1)
-    // 普通模式：凑够 target 天就停；force 模式：固定往回扫一段，目的是重新校验并清理脏行
-    const candidateLimit = opts.force ? Math.ceil(target * 1.5) + 10 : target * 3 + 15
-    while (tried < candidateLimit && (opts.force || have.size < target)) {
+    // 普通模式也要把「最近 target 个交易日内」的缺口补上：
+    // 原来以 have.size < target 作为停止条件，只要库里总天数够 30 就再也不补，
+    // 于是少数几天缺失（例如后端当天没跑）会永久留洞，只能手工 force。
+    // 现在固定扫一段候选日期，已有日期直接跳过（不发请求），缺哪补哪。
+    const candidateLimit = opts.force ? Math.ceil(target * 1.5) + 10 : Math.ceil(target * 1.6) + 10
+    while (tried < candidateLimit) {
       tried += 1
       const dow = weekday(cursor)
       if (dow !== 0 && dow !== 6 && (opts.force || !have.has(cursor))) {

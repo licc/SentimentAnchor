@@ -6,7 +6,7 @@ import type { Response } from 'express'
 import type { Snapshot } from '../shared/types.js'
 import { MarketService } from './services/market.js'
 import compression from 'compression'
-import { backfillSentiment, isBackfilling } from './services/sentiment-backfill.js'
+import { backfillSentiment, isBackfilling, recentGapDays } from './services/sentiment-backfill.js'
 import { countDays } from './services/sentiment-store.js'
 import { generateAi, getAiEnvelope, llmConfig } from './services/ai.js'
 import { clearAiConfig, listAiModels, publicAiConfig, saveAiConfig, testAiConfig } from './services/ai-config.js'
@@ -1128,8 +1128,13 @@ const server = app.listen(PORT, HOST, () => {
   void (async () => {
     try {
       const have = countDays()
-      if (have < 30) {
-        console.log(`[sentiment] 历史仅 ${have} 天，后台回填至 30 天…`)
+      // 除了"天数不够"，还要看最近几个交易日有没有洞：
+      // 机器停过一两天时总天数仍然达标，但图上会缺那几天。
+      const gaps = recentGapDays(5)
+      if (have < 30 || gaps.length) {
+        console.log(
+          `[sentiment] 历史 ${have} 天${gaps.length ? `，近期缺口 ${gaps.join(', ')}` : ''}，后台回填至 30 天…`,
+        )
         await backfillSentiment(30)
       }
     } catch (err) {
